@@ -55,10 +55,10 @@ test("normalizePath expands a home-directory path to an absolute path", () => {
   assert.equal(normalizePath("~/dotfiles"), resolve(join(homedir(), "dotfiles")));
 });
 
-test("runCmd returns structured output for successful and failing commands", () => {
+test("runCmd returns raw structured output for successful and failing commands", () => {
   const success = runCmd([process.execPath, "-e", "console.log('ok')"]);
   assert.equal(success.success, true);
-  assert.equal(success.stdout, "ok");
+  assert.equal(success.stdout, "ok\n");
   assert.equal(success.stderr, "");
 
   const failure = runCmd([process.execPath, "-e", "process.exit(7)"]);

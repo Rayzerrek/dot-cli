@@ -1,6 +1,4 @@
 import {
-  cpSync,
-  existsSync,
   mkdirSync,
   readdirSync,
   readlinkSync,
@@ -90,7 +88,7 @@ function staleLinkCandidates(name: string): string[] {
  * are removed. Physical directories are never deleted here.
  */
 function cleanStaleLinks({ dotfilesDir, links }: AppConfig): boolean {
-  if (!existsSync(dotfilesDir)) return true;
+  if (!safeLstat(dotfilesDir)) return true;
 
   let dotfileNames: string[];
   try {
@@ -173,13 +171,15 @@ export function handleLink(config: AppConfig): boolean {
   let ok = cleanStaleLinks(config);
 
   const { links } = config;
+  if (links.length === 0) return ok;
+
   console.log(header("Restoring Dotfiles Links"));
 
   for (const link of links) {
     console.log(`\nProcessing ${bold(link.name)}...`);
 
     // Ensure source directory exists; migrate local system files if missing from repository
-    if (!existsSync(link.repoPath)) {
+    if (!safeLstat(link.repoPath)) {
       const localStat = safeLstat(link.systemPath);
       if (!localStat || localStat.isSymbolicLink()) {
         logError(
@@ -188,14 +188,22 @@ export function handleLink(config: AppConfig): boolean {
         ok = false;
         continue;
       }
+      if (!localStat.isDirectory()) {
+        logError(
+          `Local configuration path is not a directory: ${link.systemPath}. Skipping.`,
+        );
+        ok = false;
+        continue;
+      }
       logInfo(
-        `Migrating local configuration from ${link.systemPath} to ${link.repoPath}...`,
+        `Moving local configuration from ${link.systemPath} to ${link.repoPath}...`,
       );
       try {
-        cpSync(link.systemPath, link.repoPath, { recursive: true });
-        logSuccess(`Successfully migrated files to ${link.repoPath}!`);
+        mkdirSync(dirname(link.repoPath), { recursive: true });
+        renameSync(link.systemPath, link.repoPath);
+        logSuccess(`Successfully moved files to ${link.repoPath}!`);
       } catch (err) {
-        logError(`Failed to migrate files: ${errorMessage(err)}`);
+        logError(`Failed to move files: ${errorMessage(err)}`);
         ok = false;
         continue;
       }

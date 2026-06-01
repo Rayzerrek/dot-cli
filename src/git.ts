@@ -32,9 +32,10 @@ export function printGitRepositoryStatus(dotfilesDir: string): boolean {
     return false;
   }
 
-  if (gitStatus.stdout) {
+  const statusText = gitStatus.stdout.trimEnd();
+  if (statusText) {
     console.log(yellow("Uncommitted changes detected in repository:"));
-    for (const line of gitStatus.stdout.split(/\r?\n/)) {
+    for (const line of statusText.split(/\r?\n/)) {
       console.log(`  ${line}`);
     }
   } else {
@@ -96,12 +97,29 @@ export function handleUpdate(
     logError(`Failed to check git status: ${statusRes.stderr}`);
     return false;
   }
-  if (!statusRes.stdout) {
+  const statusText = statusRes.stdout.trimEnd();
+  if (!statusText) {
     logSuccess("No changes to update.");
     return true;
   }
 
-  const lines = statusRes.stdout.split(/\r?\n/);
+  const emailRes = git("config", "user.email");
+  if (!emailRes.success || !emailRes.stdout.trim()) {
+    logError(
+      'Git user.email is not configured. Run: git config --global user.email "you@example.com"',
+    );
+    return false;
+  }
+
+  const nameRes = git("config", "user.name");
+  if (!nameRes.success || !nameRes.stdout.trim()) {
+    logError(
+      'Git user.name is not configured. Run: git config --global user.name "Your Name"',
+    );
+    return false;
+  }
+
+  const lines = statusText.split(/\r?\n/);
 
   // Display changes to be pushed
   console.log(`\n${bold("Detected changes to push:")}`);
@@ -129,16 +147,16 @@ export function handleUpdate(
   logSuccess("Commit created successfully!");
 
   const branchRes = git("branch", "--show-current");
-  if (!branchRes.success || !branchRes.stdout) {
+  const branch = branchRes.stdout.trim();
+  if (!branchRes.success || !branch) {
     logError(
-      `Could not determine current branch: ${branchRes.stderr || "empty result"}`,
+      `Could not determine current branch: ${branchRes.stderr.trim() || "empty result"}`,
     );
     logWarning(
       `Commit was created locally. Push manually with: git -C "${dotfilesDir}" push origin <branch>`,
     );
     return false;
   }
-  const branch = branchRes.stdout;
 
   logInfo(`Pushing changes to remote (git push origin ${branch})...`);
   const pushRes = git("push", "origin", branch);

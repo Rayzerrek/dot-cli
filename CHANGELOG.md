@@ -7,6 +7,11 @@ This project follows npm package versions published for `@rayzerrek/dot-cli`.
 ## [Unreleased]
 
 - Added project contribution and security documentation.
+- Added `dot --version` / `dot version`.
+- Fixed local migration to move files into the repository instead of copying them.
+- Added clearer Git identity pre-flight errors before `dot update` commits.
+- Hardened config parsing, config-file detection, circular-link validation, and Windows reserved link names.
+- Expanded CI to run tests on Linux, macOS, and Windows.
 
 ## [1.0.23] - 2026-05-30
 

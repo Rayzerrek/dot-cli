@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -26,7 +27,20 @@ test("CLI help prints usage and exits successfully without loading config", (t) 
   assert.match(result.stdout, /Dotfiles CLI Manager/);
   assert.match(result.stdout, /dot <command> \[options\]/);
   assert.match(result.stdout, /status/);
+  assert.match(result.stdout, /version/);
   assert.doesNotMatch(result.stdout, /No configuration file found/);
+});
+
+test("CLI version prints the package version without loading config", (t) => {
+  const { env } = createTempHome(t);
+  const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf-8"));
+  assert.equal(typeof packageJson.version, "string");
+
+  const result = runCli(["--version"], env);
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, `${packageJson.version}\n`);
+  assert.equal(result.stderr, "");
 });
 
 test("CLI status succeeds when configured link points to the repository path", (t) => {
@@ -65,7 +79,7 @@ test("CLI status succeeds when configured link points to the repository path", (
   assert.match(result.stdout, /Git Repository Status/);
 });
 
-test("CLI link migrates a local directory, backs it up, and replaces it with a link", (t) => {
+test("CLI link moves a local directory into the repository and replaces it with a link", (t) => {
   const { root, env } = createTempHome(t);
   const dotfilesDir = join(root, "dotfiles");
   const systemPath = join(root, "system", "tool");
@@ -87,9 +101,9 @@ test("CLI link migrates a local directory, backs it up, and replaces it with a l
     readdirSync(join(root, "system")).some((entry) =>
       entry.startsWith("tool_backup_"),
     ),
-    true,
+    false,
   );
-  assert.match(result.stdout, /Successfully migrated files/);
+  assert.match(result.stdout, /Successfully moved files/);
   assert.match(result.stdout, /Successfully linked tool/);
 });
 
@@ -144,4 +158,129 @@ test("CLI link rejects link names that escape the dotfiles directory", (t) => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /links\[0\]\.name/);
+});
+
+test("CLI link rejects Windows reserved link names", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  mkdirSync(dotfilesDir, { recursive: true });
+  writeConfig(
+    root,
+    JSON.stringify({
+      dotfilesDir,
+      links: [{ name: "CON", systemPath: join(root, "system", "CON") }],
+    }),
+  );
+
+  const result = runCli(["link"], env);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /links\[0\]\.name/);
+});
+
+test("CLI link rejects circular repository and system paths", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, ".config", "nvim");
+  mkdirSync(dotfilesDir, { recursive: true });
+  writeConfig(
+    root,
+    JSON.stringify({
+      dotfilesDir,
+      links: [{ name: "nvim", systemPath: dotfilesDir }],
+    }),
+  );
+
+  const result = runCli(["link"], env);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Circular link detected/);
+});
+
+test("CLI link falls back when an earlier config candidate is a directory", (t) => {
+  const { root, env } = createTempHome(t);
+  mkdirSync(join(root, ".config", "dot", "config.jsonc"), { recursive: true });
+  writeFileSync(
+    join(root, ".dotrc.json"),
+    JSON.stringify({ dotfilesDir: join(root, "dotfiles"), links: [] }),
+  );
+
+  const result = runCli(["link"], env);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Skipping config candidate because it is not a file/);
+});
+
+test("CLI link accepts JSONC comments and does not print restore header for empty links", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  mkdirSync(dotfilesDir, { recursive: true });
+  writeConfig(
+    root,
+    [
+      "{",
+      "  // URL-like strings must not be treated as comments.",
+      `  "dotfilesDir": ${JSON.stringify(dotfilesDir)},`,
+      "  \"note\": \"https://example.test/path?q=//kept\",",
+      `  "escaped": ${JSON.stringify('quote: " and slash: \\')},`,
+      "  \"links\": [],",
+      "}",
+      "",
+    ].join("\n"),
+  );
+
+  const result = runCli(["link"], env);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /Restoring Dotfiles Links/);
+});
+
+test("CLI link cleans stale links without processing an empty link list", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  const repoPath = join(dotfilesDir, "old");
+  const staleParent = join(root, ".config");
+  const stalePath = join(staleParent, "old");
+  mkdirSync(repoPath, { recursive: true });
+  mkdirSync(staleParent, { recursive: true });
+
+  if (!createDirectorySymlinkOrSkip(t, repoPath, stalePath)) {
+    return;
+  }
+
+  writeConfig(root, JSON.stringify({ dotfilesDir, links: [] }));
+
+  const result = runCli(["link"], env);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(stalePath), false);
+  assert.match(result.stdout, /Cleaning Stale Links/);
+  assert.doesNotMatch(result.stdout, /Restoring Dotfiles Links/);
+});
+
+test("CLI update fails clearly before commit when git identity is missing", (t) => {
+  if (skipWhenGitUnavailable(t)) {
+    return;
+  }
+
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  mkdirSync(dotfilesDir, { recursive: true });
+  const gitInit = spawnSync("git", ["init"], {
+    cwd: dotfilesDir,
+    env,
+    encoding: "utf-8",
+  });
+  assert.equal(gitInit.status, 0, gitInit.stderr);
+  writeFileSync(join(dotfilesDir, "README.md"), "changed\n");
+  writeConfig(root, JSON.stringify({ dotfilesDir, links: [] }));
+
+  const result = runCli(["update"], {
+    ...env,
+    GIT_CONFIG_GLOBAL: join(root, "missing-global-gitconfig"),
+    GIT_CONFIG_NOSYSTEM: "1",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Git user\.email is not configured/);
+  assert.doesNotMatch(result.stdout, /Staging changes/);
 });

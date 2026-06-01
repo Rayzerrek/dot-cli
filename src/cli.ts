@@ -4,6 +4,7 @@ import { handleLink } from "./links.js";
 import { handleStatus } from "./status.js";
 import type { AppConfig } from "./types.js";
 import { logError, printHelp } from "./ui.js";
+import { VERSION } from "./version.js";
 
 function runWithConfiguration(handler: (config: AppConfig) => boolean): boolean {
   const result = loadConfiguration();
@@ -28,6 +29,11 @@ export function main(args: string[] = process.argv.slice(2)): void {
   switch (command) {
     case "init":
       ok = handleInit();
+      break;
+    case "version":
+    case "-v":
+    case "--version":
+      console.log(VERSION);
       break;
     case "status": {
       ok = runWithConfiguration(handleStatus);

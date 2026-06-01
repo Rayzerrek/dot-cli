@@ -88,6 +88,9 @@ dot link
 # Stage, commit, and push changes to your dotfiles repository
 dot update [optional_message]
 
+# Display installed version
+dot --version
+
 # Display help
 dot help
 ```

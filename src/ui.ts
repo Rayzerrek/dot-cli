@@ -34,6 +34,10 @@ export function logError(msg: string): void {
  */
 export function promptInput(question: string): string {
   writeSync(process.stdout.fd, question);
+  if (!process.stdin.isTTY) {
+    logWarning("Input is not a TTY; using the default value.");
+    return "";
+  }
   const buffer = Buffer.alloc(1024);
   const bytesRead = readSync(process.stdin.fd, buffer, 0, buffer.length, null);
   return buffer.toString("utf-8", 0, bytesRead).trim();
@@ -53,6 +57,7 @@ ${bold("USAGE:")}
 
 ${bold("COMMANDS:")}
   ${green("init")}               Create the default configuration file.
+  ${green("version")}            Display the installed dot-cli version.
   ${green("update [message]")}  Stage, commit, and push dotfiles changes to GitHub.
                           If no commit message is provided, one will be auto-generated.
   ${green("status")}             Check the state of system links and the git repository.

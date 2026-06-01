@@ -44,8 +44,8 @@ export function runCmd(
     env: process.env,
     encoding: "utf-8",
   });
-  const stdout = proc.stdout?.trim() ?? "";
-  const stderr = proc.stderr?.trim() ?? "";
+  const stdout = typeof proc.stdout === "string" ? proc.stdout : "";
+  const stderr = typeof proc.stderr === "string" ? proc.stderr : "";
 
   if (proc.error) {
     return {

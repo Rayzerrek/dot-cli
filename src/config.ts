@@ -9,10 +9,10 @@ import {
   writeSync,
 } from "fs";
 import { homedir } from "os";
-import { join } from "path";
+import { isAbsolute, join, relative } from "path";
 
 import { normalizePath } from "./paths.js";
-import { errorMessage } from "./system.js";
+import { errorMessage, safeLstat } from "./system.js";
 import {
   type AppConfig,
   type DotConfig,
@@ -45,7 +45,13 @@ function isPlatformKey(value: string): value is PlatformKey {
 }
 
 function isValidLinkName(name: string): boolean {
-  return !["", ".", ".."].includes(name.trim()) && !/[\\/]/.test(name);
+  const trimmed = name.trim();
+  const windowsReservedName = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+  return (
+    !["", ".", ".."].includes(trimmed) &&
+    !/[\\/]/.test(name) &&
+    !windowsReservedName.test(trimmed)
+  );
 }
 
 function currentPlatformKey(): PlatformKey | undefined {
@@ -73,6 +79,26 @@ function resolveSystemPath(pathSpec: SystemPathSpec): string | undefined {
   return key ? pathSpec[key] : undefined;
 }
 
+function comparablePath(path: string): string {
+  return process.platform === "win32" ? path.toLowerCase() : path;
+}
+
+function isSameOrNestedPath(parent: string, child: string): boolean {
+  const rel = relative(comparablePath(parent), comparablePath(child));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function assertNoCircularLink(link: ResolvedLink): void {
+  if (
+    isSameOrNestedPath(link.repoPath, link.systemPath) ||
+    isSameOrNestedPath(link.systemPath, link.repoPath)
+  ) {
+    throw new Error(
+      `Circular link detected for ${link.name}: ${link.systemPath} ↔ ${link.repoPath}`,
+    );
+  }
+}
+
 /**
  * Strips single-line (`//`) and multi-line (`/* ... *\/`) comments,
  * and trailing commas from a JSONC string to make it valid JSON.
@@ -80,14 +106,112 @@ function resolveSystemPath(pathSpec: SystemPathSpec): string | undefined {
  * @param content - The raw JSONC content.
  * @returns A standard JSON-compliant string.
  */
+function stripJsonComments(content: string): string {
+  let output = "";
+  let inString = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+    const next = content[i + 1];
+
+    if (inString) {
+      output += char;
+      if (char === "\\" && next !== undefined) {
+        output += next;
+        i += 1;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (inLineComment) {
+      if (char === "\n" || char === "\r") {
+        output += char;
+        inLineComment = false;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === "*" && next === "/") {
+        i += 1;
+        inBlockComment = false;
+      } else if (char === "\n" || char === "\r") {
+        output += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      output += char;
+      inString = true;
+      continue;
+    }
+
+    if (char === "/" && next === "/") {
+      i += 1;
+      inLineComment = true;
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      i += 1;
+      inBlockComment = true;
+      continue;
+    }
+
+    output += char;
+  }
+
+  return output;
+}
+
+function removeTrailingCommas(content: string): string {
+  let output = "";
+  let inString = false;
+
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+    const next = content[i + 1];
+
+    if (inString) {
+      output += char;
+      if (char === "\\" && next !== undefined) {
+        output += next;
+        i += 1;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      output += char;
+      inString = true;
+      continue;
+    }
+
+    if (char === ",") {
+      let j = i + 1;
+      while (/\s/.test(content[j] ?? "")) {
+        j += 1;
+      }
+      if (content[j] === "}" || content[j] === "]") {
+        continue;
+      }
+    }
+
+    output += char;
+  }
+
+  return output;
+}
+
 function stripComments(content: string): string {
-  let stripped = content.replace(
-    /\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g,
-    (m, g: string | undefined) => (g ? "" : m),
-  );
-  // Remove trailing commas before } or ] (valid in JSONC, invalid in JSON)
-  stripped = stripped.replace(/,\s*([}\]])/g, "$1");
-  return stripped;
+  return removeTrailingCommas(stripJsonComments(content));
 }
 
 /**
@@ -178,7 +302,12 @@ export function findConfigFile(): { content: string; path: string } | null {
   ];
 
   for (const path of candidates) {
-    if (!existsSync(path)) continue;
+    const stat = safeLstat(path);
+    if (!stat) continue;
+    if (!stat.isFile()) {
+      logWarning(`Skipping config candidate because it is not a file: ${path}`);
+      continue;
+    }
     try {
       return { content: readFileSync(path, "utf-8"), path };
     } catch (err) {
@@ -210,7 +339,9 @@ function notifyOnConfigChange(content: string, path: string): void {
   try {
     mkdirSync(DOT_DIR, { recursive: true });
     writeFileSync(hashFile, currentHash);
-  } catch {}
+  } catch (err) {
+    logWarning(`Could not update config change cache: ${errorMessage(err)}`);
+  }
 }
 
 /**
@@ -251,14 +382,20 @@ export function loadConfiguration():
 
   // Resolve links for the current platform
   const links: ResolvedLink[] = [];
-  for (const link of configData.links ?? []) {
-    const sysPathRaw = resolveSystemPath(link.systemPath);
-    if (!sysPathRaw) continue;
-    links.push({
-      name: link.name,
-      repoPath: join(dotfilesDir, link.name),
-      systemPath: normalizePath(sysPathRaw),
-    });
+  try {
+    for (const link of configData.links ?? []) {
+      const sysPathRaw = resolveSystemPath(link.systemPath);
+      if (!sysPathRaw) continue;
+      const resolvedLink = {
+        name: link.name,
+        repoPath: normalizePath(join(dotfilesDir, link.name)),
+        systemPath: normalizePath(sysPathRaw),
+      };
+      assertNoCircularLink(resolvedLink);
+      links.push(resolvedLink);
+    }
+  } catch (err) {
+    return { ok: false, error: `Invalid config: ${errorMessage(err)}` };
   }
 
   return { ok: true, config: { dotfilesDir, links } };
