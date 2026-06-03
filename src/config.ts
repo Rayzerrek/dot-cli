@@ -1,13 +1,13 @@
 import { createHash } from "crypto";
 import {
   closeSync,
-  existsSync,
   mkdirSync,
   openSync,
   readFileSync,
   writeFileSync,
   writeSync,
 } from "fs";
+import { type ParseError, parse, printParseErrorCode } from "jsonc-parser";
 import { homedir } from "os";
 import { isAbsolute, join, relative } from "path";
 
@@ -99,119 +99,18 @@ function assertNoCircularLink(link: ResolvedLink): void {
   }
 }
 
-/**
- * Strips single-line (`//`) and multi-line (`/* ... *\/`) comments,
- * and trailing commas from a JSONC string to make it valid JSON.
- *
- * @param content - The raw JSONC content.
- * @returns A standard JSON-compliant string.
- */
-function stripJsonComments(content: string): string {
-  let output = "";
-  let inString = false;
-  let inLineComment = false;
-  let inBlockComment = false;
+function parseJsonc(content: string): unknown {
+  const errors: ParseError[] = [];
+  const parsed = parse(content, errors, { allowTrailingComma: true });
 
-  for (let i = 0; i < content.length; i += 1) {
-    const char = content[i];
-    const next = content[i + 1];
-
-    if (inString) {
-      output += char;
-      if (char === "\\" && next !== undefined) {
-        output += next;
-        i += 1;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (inLineComment) {
-      if (char === "\n" || char === "\r") {
-        output += char;
-        inLineComment = false;
-      }
-      continue;
-    }
-
-    if (inBlockComment) {
-      if (char === "*" && next === "/") {
-        i += 1;
-        inBlockComment = false;
-      } else if (char === "\n" || char === "\r") {
-        output += char;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      output += char;
-      inString = true;
-      continue;
-    }
-
-    if (char === "/" && next === "/") {
-      i += 1;
-      inLineComment = true;
-      continue;
-    }
-
-    if (char === "/" && next === "*") {
-      i += 1;
-      inBlockComment = true;
-      continue;
-    }
-
-    output += char;
+  if (errors.length > 0) {
+    const error = errors[0];
+    throw new Error(
+      `${printParseErrorCode(error.error)} at offset ${error.offset}`,
+    );
   }
 
-  return output;
-}
-
-function removeTrailingCommas(content: string): string {
-  let output = "";
-  let inString = false;
-
-  for (let i = 0; i < content.length; i += 1) {
-    const char = content[i];
-    const next = content[i + 1];
-
-    if (inString) {
-      output += char;
-      if (char === "\\" && next !== undefined) {
-        output += next;
-        i += 1;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      output += char;
-      inString = true;
-      continue;
-    }
-
-    if (char === ",") {
-      let j = i + 1;
-      while (/\s/.test(content[j] ?? "")) {
-        j += 1;
-      }
-      if (content[j] === "}" || content[j] === "]") {
-        continue;
-      }
-    }
-
-    output += char;
-  }
-
-  return output;
-}
-
-function stripComments(content: string): string {
-  return removeTrailingCommas(stripJsonComments(content));
+  return parsed;
 }
 
 /**
@@ -359,8 +258,7 @@ export function loadConfiguration():
   let configData: DotConfig = {};
   if (found) {
     try {
-      const parsed: unknown = JSON.parse(stripComments(found.content));
-      configData = validateConfig(parsed);
+      configData = validateConfig(parseJsonc(found.content));
       notifyOnConfigChange(found.content, found.path);
     } catch (err) {
       return {
