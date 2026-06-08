@@ -1,7 +1,6 @@
 import { existsSync } from "fs";
 
 import { runCmd } from "./system.js";
-import type { AppConfig, ResolvedLink } from "./types.js";
 import {
   bold,
   gray,
@@ -13,6 +12,8 @@ import {
   red,
   yellow,
 } from "./ui.js";
+
+import type { AppConfig, ResolvedLink } from "./types.js";
 
 /**
  * Prints the short git status for the configured dotfiles repository.

@@ -1,7 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 
 const CLI_PATH = join(process.cwd(), "dist", "index.js");
 
@@ -47,10 +53,16 @@ export function skipWhenGitUnavailable(t) {
 
 export function createDirectorySymlinkOrSkip(t, target, path) {
   try {
-    symlinkSync(target, path, process.platform === "win32" ? "junction" : "dir");
+    symlinkSync(
+      target,
+      path,
+      process.platform === "win32" ? "junction" : "dir",
+    );
     return true;
   } catch (err) {
-    t.skip(`symlink creation is unavailable in this environment: ${String(err)}`);
+    t.skip(
+      `symlink creation is unavailable in this environment: ${String(err)}`,
+    );
     return false;
   }
 }

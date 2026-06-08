@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -8,7 +9,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
@@ -33,7 +33,9 @@ test("CLI help prints usage and exits successfully without loading config", (t) 
 
 test("CLI version prints the package version without loading config", (t) => {
   const { env } = createTempHome(t);
-  const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf-8"));
+  const packageJson = JSON.parse(
+    readFileSync(join(process.cwd(), "package.json"), "utf-8"),
+  );
   assert.equal(typeof packageJson.version, "string");
 
   const result = runCli(["--version"], env);
@@ -95,7 +97,10 @@ test("CLI link moves a local directory into the repository and replaces it with 
   const result = runCli(["link"], env);
 
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(readFileSync(join(dotfilesDir, "tool", "settings.json"), "utf-8"), "{}\n");
+  assert.equal(
+    readFileSync(join(dotfilesDir, "tool", "settings.json"), "utf-8"),
+    "{}\n",
+  );
   assert.equal(lstatSync(systemPath).isSymbolicLink(), true);
   assert.equal(
     readdirSync(join(root, "system")).some((entry) =>
@@ -121,8 +126,13 @@ test("CLI link creates the system path parent directory before linking", (t) => 
 
   const result = runCli(["link"], env);
 
-  if (result.status !== 0 && /EPERM|EACCES|privilege|permission/i.test(result.stderr)) {
-    t.skip(`symlink creation is unavailable in this environment: ${result.stderr}`);
+  if (
+    result.status !== 0 &&
+    /EPERM|EACCES|privilege|permission/i.test(result.stderr)
+  ) {
+    t.skip(
+      `symlink creation is unavailable in this environment: ${result.stderr}`,
+    );
     return;
   }
 
@@ -144,8 +154,13 @@ test("CLI link uses repository-local config for freshly cloned dotfiles", (t) =>
 
   const result = runCli(["link"], env);
 
-  if (result.status !== 0 && /EPERM|EACCES|privilege|permission/i.test(result.stderr)) {
-    t.skip(`symlink creation is unavailable in this environment: ${result.stderr}`);
+  if (
+    result.status !== 0 &&
+    /EPERM|EACCES|privilege|permission/i.test(result.stderr)
+  ) {
+    t.skip(
+      `symlink creation is unavailable in this environment: ${result.stderr}`,
+    );
     return;
   }
 
@@ -168,8 +183,13 @@ test("CLI link accepts an explicit config path for a non-default clone", (t) => 
 
   const result = runCli(["link", "--config", configPath], env);
 
-  if (result.status !== 0 && /EPERM|EACCES|privilege|permission/i.test(result.stderr)) {
-    t.skip(`symlink creation is unavailable in this environment: ${result.stderr}`);
+  if (
+    result.status !== 0 &&
+    /EPERM|EACCES|privilege|permission/i.test(result.stderr)
+  ) {
+    t.skip(
+      `symlink creation is unavailable in this environment: ${result.stderr}`,
+    );
     return;
   }
 
@@ -195,7 +215,10 @@ test("CLI deploy uses repository-local config for freshly cloned dotfiles", (t) 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(lstatSync(systemPath).isDirectory(), true);
   assert.equal(lstatSync(systemPath).isSymbolicLink(), false);
-  assert.equal(readFileSync(join(systemPath, "init.lua"), "utf-8"), "vim.opt.number = true\n");
+  assert.equal(
+    readFileSync(join(systemPath, "init.lua"), "utf-8"),
+    "vim.opt.number = true\n",
+  );
   assert.match(result.stdout, /Successfully deployed nvim/);
 });
 
@@ -217,12 +240,18 @@ test("CLI deploy backs up an existing system config before copying", (t) => {
   const result = runCli(["deploy"], env);
 
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(readFileSync(join(systemPath, "init.lua"), "utf-8"), "repo config\n");
+  assert.equal(
+    readFileSync(join(systemPath, "init.lua"), "utf-8"),
+    "repo config\n",
+  );
   const backupName = readdirSync(systemParent).find((entry) =>
     entry.startsWith("nvim_backup_"),
   );
   assert.notEqual(backupName, undefined);
-  assert.equal(readFileSync(join(systemParent, backupName, "init.lua"), "utf-8"), "local config\n");
+  assert.equal(
+    readFileSync(join(systemParent, backupName, "init.lua"), "utf-8"),
+    "local config\n",
+  );
   assert.match(result.stdout, /Backup created successfully/);
   assert.match(result.stdout, /Successfully deployed nvim/);
 });
@@ -313,7 +342,10 @@ test("CLI link falls back when an earlier config candidate is a directory", (t) 
   const result = runCli(["link"], env);
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Skipping config candidate because it is not a file/);
+  assert.match(
+    result.stdout,
+    /Skipping config candidate because it is not a file/,
+  );
 });
 
 test("CLI link accepts JSONC comments and does not print restore header for empty links", (t) => {
@@ -326,9 +358,9 @@ test("CLI link accepts JSONC comments and does not print restore header for empt
       "{",
       "  // URL-like strings must not be treated as comments.",
       `  "dotfilesDir": ${JSON.stringify(dotfilesDir)},`,
-      "  \"note\": \"https://example.test/path?q=//kept\",",
+      '  "note": "https://example.test/path?q=//kept",',
       `  "escaped": ${JSON.stringify('quote: " and slash: \\')},`,
-      "  \"links\": [],",
+      '  "links": [],',
       "}",
       "",
     ].join("\n"),

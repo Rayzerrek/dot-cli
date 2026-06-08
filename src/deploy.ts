@@ -2,7 +2,6 @@ import { cpSync, mkdirSync, renameSync, unlinkSync } from "fs";
 import { dirname } from "path";
 
 import { errorMessage, safeLstat } from "./system.js";
-import type { AppConfig } from "./types.js";
 import {
   bold,
   header,
@@ -11,6 +10,8 @@ import {
   logSuccess,
   logWarning,
 } from "./ui.js";
+
+import type { AppConfig } from "./types.js";
 
 /**
  * Copies configured dotfiles from the repository into their system locations.
@@ -30,7 +31,9 @@ export function handleDeploy({ links }: AppConfig): boolean {
 
     const sourceStat = safeLstat(link.repoPath);
     if (!sourceStat) {
-      logError(`Source does not exist in repository: ${link.repoPath}. Skipping.`);
+      logError(
+        `Source does not exist in repository: ${link.repoPath}. Skipping.`,
+      );
       ok = false;
       continue;
     }
@@ -38,7 +41,9 @@ export function handleDeploy({ links }: AppConfig): boolean {
     const destinationStat = safeLstat(link.systemPath);
     if (destinationStat) {
       if (destinationStat.isSymbolicLink()) {
-        logInfo(`Removing existing link at ${link.systemPath} before copying...`);
+        logInfo(
+          `Removing existing link at ${link.systemPath} before copying...`,
+        );
         try {
           unlinkSync(link.systemPath);
         } catch (err) {

@@ -280,9 +280,9 @@ function notifyOnConfigChange(content: string, path: string): void {
  * @returns A tagged result containing either the resolved application
  * configuration or a parse/validation error.
  */
-export function loadConfiguration(configPath?: string):
-  | { ok: true; config: AppConfig }
-  | { ok: false; error: string } {
+export function loadConfiguration(
+  configPath?: string,
+): { ok: true; config: AppConfig } | { ok: false; error: string } {
   const found = findConfigFile(configPath);
 
   if (!found && configPath) {

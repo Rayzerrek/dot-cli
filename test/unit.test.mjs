@@ -9,7 +9,10 @@ import { buildCommitMessage } from "../dist/git.js";
 import { checkJunction } from "../dist/links.js";
 import { normalizePath } from "../dist/paths.js";
 import { runCmd } from "../dist/system.js";
-import { createDirectorySymlinkOrSkip, createTempDir } from "./support/helpers.mjs";
+import {
+  createDirectorySymlinkOrSkip,
+  createTempDir,
+} from "./support/helpers.mjs";
 
 test("buildInitialConfigContent writes documented JSONC starter config", () => {
   const content = buildInitialConfigContent("~/dotfiles");
@@ -45,14 +48,14 @@ test("buildCommitMessage matches complete top-level path segments", () => {
     [{ name: "nvim", repoPath: "/repo/nvim", systemPath: "/system/nvim" }],
   );
 
-  assert.match(
-    message,
-    /^update: general, nvim config \(\d{4}-\d{2}-\d{2}\)$/,
-  );
+  assert.match(message, /^update: general, nvim config \(\d{4}-\d{2}-\d{2}\)$/);
 });
 
 test("normalizePath expands a home-directory path to an absolute path", () => {
-  assert.equal(normalizePath("~/dotfiles"), resolve(join(homedir(), "dotfiles")));
+  assert.equal(
+    normalizePath("~/dotfiles"),
+    resolve(join(homedir(), "dotfiles")),
+  );
 });
 
 test("runCmd returns raw structured output for successful and failing commands", () => {
@@ -69,7 +72,10 @@ test("runCmd reports spawn errors for missing commands", () => {
   const result = runCmd(["dot-cli-command-that-should-not-exist"]);
 
   assert.equal(result.success, false);
-  assert.match(result.stderr, /dot-cli-command-that-should-not-exist|ENOENT|not found/i);
+  assert.match(
+    result.stderr,
+    /dot-cli-command-that-should-not-exist|ENOENT|not found/i,
+  );
 });
 
 test("checkJunction reports missing and physical paths as unhealthy", (t) => {

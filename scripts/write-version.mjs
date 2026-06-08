@@ -1,8 +1,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
-const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
+const packageJson = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+);
 
-if (typeof packageJson !== "object" || packageJson === null || Array.isArray(packageJson)) {
+if (
+  typeof packageJson !== "object" ||
+  packageJson === null ||
+  Array.isArray(packageJson)
+) {
   throw new Error("package.json must be a JSON object");
 }
 

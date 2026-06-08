@@ -11,7 +11,6 @@ import { dirname, isAbsolute, join, resolve } from "path";
 
 import { normalizePath } from "./paths.js";
 import { errorMessage, safeLstat } from "./system.js";
-import type { AppConfig, LinkCheckResult, ResolvedLink } from "./types.js";
 import {
   bold,
   header,
@@ -20,6 +19,8 @@ import {
   logSuccess,
   logWarning,
 } from "./ui.js";
+
+import type { AppConfig, LinkCheckResult, ResolvedLink } from "./types.js";
 
 function resolveLinkTarget(linkPath: string, target: string): string {
   return isAbsolute(target) ? target : resolve(dirname(linkPath), target);
@@ -136,7 +137,10 @@ function cleanStaleLinks({ dotfilesDir, links }: AppConfig): boolean {
         continue;
       }
 
-      if (normalizePath(resolveLinkTarget(candidate, target)) !== normalizedRepoPath) {
+      if (
+        normalizePath(resolveLinkTarget(candidate, target)) !==
+        normalizedRepoPath
+      ) {
         continue;
       }
 

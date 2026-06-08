@@ -5,7 +5,6 @@
 
 A lightweight, high-performance, cross-platform CLI manager to keep system configurations (`dotfiles`) in sync across Windows, macOS, and Linux.
 
-
 ## Installation
 
 ### Via npm (Recommended)
@@ -38,7 +37,6 @@ npm run build
 # Link the CLI globally to your system
 npm link
 ```
-
 
 ## Configuration
 
@@ -77,6 +75,7 @@ When no global config exists, `dot` also looks for `config.jsonc`, `config.json`
   ]
 }
 ```
+
 - **`dotfilesDir`**: The absolute path to your central dotfiles repository (defaults to `~/dotfiles` or `DOTFILES_DIR` environment variable).
 - **`links`**: An array of folders to link:
   - **`name`**: The directory name in your dotfiles repository and the label shown in the CLI.
@@ -91,7 +90,7 @@ dot status
 # Create the default configuration file
 dot init
 
-# Restore or recreate missing system links 
+# Restore or recreate missing system links
 dot link
 
 # Copy dotfiles into their configured system locations instead of linking

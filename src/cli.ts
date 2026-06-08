@@ -3,9 +3,10 @@ import { handleDeploy } from "./deploy.js";
 import { handleUpdate } from "./git.js";
 import { handleLink } from "./links.js";
 import { handleStatus } from "./status.js";
-import type { AppConfig } from "./types.js";
 import { logError, printHelp } from "./ui.js";
 import { VERSION } from "./version.js";
+
+import type { AppConfig } from "./types.js";
 
 function runWithConfiguration(
   handler: (config: AppConfig) => boolean,
@@ -19,7 +20,9 @@ function runWithConfiguration(
   return handler(result.config);
 }
 
-function parseCliArgs(args: string[]):
+function parseCliArgs(
+  args: string[],
+):
   | { ok: true; args: string[]; configPath?: string }
   | { ok: false; error: string } {
   const parsedArgs: string[] = [];
