@@ -6,6 +6,18 @@ This project follows npm package versions published for `@rayzerrek/dot-cli`.
 
 ## [Unreleased]
 
+## [1.0.25] - 2026-06-08
+
+### Added
+
+- Added `dot deploy` to copy dotfiles into configured system locations without creating symlinks.
+- Added repository-local config discovery for freshly cloned dotfiles repositories.
+- Added `--config` / `-c` for commands that load configuration.
+
+### Changed
+
+- Documented deploy-first setup for freshly cloned dotfiles repositories.
+
 ## [1.0.24] - 2026-06-01
 
 ### Added
@@ -94,7 +106,8 @@ This project follows npm package versions published for `@rayzerrek/dot-cli`.
 - Added Bun-based fast builds.
 - Added configuration auto-migration.
 
-[Unreleased]: https://github.com/Rayzerrek/dot-cli/compare/v1.0.24...HEAD
+[Unreleased]: https://github.com/Rayzerrek/dot-cli/compare/v1.0.25...HEAD
+[1.0.25]: https://github.com/Rayzerrek/dot-cli/compare/v1.0.24...v1.0.25
 [1.0.24]: https://github.com/Rayzerrek/dot-cli/releases/tag/v1.0.24
 [1.0.23]: https://github.com/Rayzerrek/dot-cli/releases/tag/v1.0.23
 [1.0.22]: https://github.com/Rayzerrek/dot-cli/releases/tag/v1.0.22

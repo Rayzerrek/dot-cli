@@ -1,5 +1,6 @@
 {
   // Example configuration showcasing different link configuration formats.
+  // Optional for repository-local configs; defaults to this config's directory there.
   "dotfilesDir": "~/dotfiles",
   "links": [
     {

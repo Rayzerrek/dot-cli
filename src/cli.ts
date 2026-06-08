@@ -1,4 +1,5 @@
 import { handleInit, loadConfiguration } from "./config.js";
+import { handleDeploy } from "./deploy.js";
 import { handleUpdate } from "./git.js";
 import { handleLink } from "./links.js";
 import { handleStatus } from "./status.js";
@@ -6,13 +7,41 @@ import type { AppConfig } from "./types.js";
 import { logError, printHelp } from "./ui.js";
 import { VERSION } from "./version.js";
 
-function runWithConfiguration(handler: (config: AppConfig) => boolean): boolean {
-  const result = loadConfiguration();
+function runWithConfiguration(
+  handler: (config: AppConfig) => boolean,
+  configPath?: string,
+): boolean {
+  const result = loadConfiguration(configPath);
   if (!result.ok) {
     logError(result.error);
     return false;
   }
   return handler(result.config);
+}
+
+function parseCliArgs(args: string[]):
+  | { ok: true; args: string[]; configPath?: string }
+  | { ok: false; error: string } {
+  const parsedArgs: string[] = [];
+  let configPath: string | undefined;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--config" || arg === "-c") {
+      const value = args[i + 1];
+      if (value === undefined) {
+        return { ok: false, error: `${arg} requires a file path` };
+      }
+      configPath = value;
+      i += 1;
+      continue;
+    }
+    parsedArgs.push(arg);
+  }
+
+  return configPath === undefined
+    ? { ok: true, args: parsedArgs }
+    : { ok: true, args: parsedArgs, configPath };
 }
 
 /**
@@ -23,7 +52,15 @@ function runWithConfiguration(handler: (config: AppConfig) => boolean): boolean 
  * flow has a single place responsible for process-level side effects.
  */
 export function main(args: string[] = process.argv.slice(2)): void {
-  const command = args[0]?.toLowerCase();
+  const parsed = parseCliArgs(args);
+  if (!parsed.ok) {
+    logError(parsed.error);
+    printHelp();
+    process.exitCode = 1;
+    return;
+  }
+
+  const command = parsed.args[0]?.toLowerCase();
 
   let ok = true;
   switch (command) {
@@ -36,17 +73,22 @@ export function main(args: string[] = process.argv.slice(2)): void {
       console.log(VERSION);
       break;
     case "status": {
-      ok = runWithConfiguration(handleStatus);
+      ok = runWithConfiguration(handleStatus, parsed.configPath);
       break;
     }
     case "link": {
-      ok = runWithConfiguration(handleLink);
+      ok = runWithConfiguration(handleLink, parsed.configPath);
+      break;
+    }
+    case "deploy": {
+      ok = runWithConfiguration(handleDeploy, parsed.configPath);
       break;
     }
     case "update": {
-      const msg = args.slice(1).join(" ");
-      ok = runWithConfiguration((config) =>
-        handleUpdate(config, msg || undefined),
+      const msg = parsed.args.slice(1).join(" ");
+      ok = runWithConfiguration(
+        (config) => handleUpdate(config, msg || undefined),
+        parsed.configPath,
       );
       break;
     }
@@ -57,7 +99,7 @@ export function main(args: string[] = process.argv.slice(2)): void {
       printHelp();
       break;
     default:
-      logError(`Unknown command: "${args[0]}"`);
+      logError(`Unknown command: "${parsed.args[0]}"`);
       printHelp();
       ok = false;
   }

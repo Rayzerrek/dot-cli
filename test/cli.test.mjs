@@ -131,6 +131,102 @@ test("CLI link creates the system path parent directory before linking", (t) => 
   assert.match(result.stdout, /Successfully linked tool/);
 });
 
+test("CLI link uses repository-local config for freshly cloned dotfiles", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  const repoPath = join(dotfilesDir, "tool");
+  const systemPath = join(root, "system", "tool");
+  mkdirSync(repoPath, { recursive: true });
+  writeFileSync(
+    join(dotfilesDir, "config.jsonc"),
+    JSON.stringify({ links: [{ name: "tool", systemPath }] }),
+  );
+
+  const result = runCli(["link"], env);
+
+  if (result.status !== 0 && /EPERM|EACCES|privilege|permission/i.test(result.stderr)) {
+    t.skip(`symlink creation is unavailable in this environment: ${result.stderr}`);
+    return;
+  }
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(lstatSync(systemPath).isSymbolicLink(), true);
+  assert.match(result.stdout, /Successfully linked tool/);
+});
+
+test("CLI link accepts an explicit config path for a non-default clone", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "my-dotfiles");
+  const repoPath = join(dotfilesDir, "tool");
+  const systemPath = join(root, "system", "tool");
+  const configPath = join(dotfilesDir, "dot.config.jsonc");
+  mkdirSync(repoPath, { recursive: true });
+  writeFileSync(
+    configPath,
+    JSON.stringify({ links: [{ name: "tool", systemPath }] }),
+  );
+
+  const result = runCli(["link", "--config", configPath], env);
+
+  if (result.status !== 0 && /EPERM|EACCES|privilege|permission/i.test(result.stderr)) {
+    t.skip(`symlink creation is unavailable in this environment: ${result.stderr}`);
+    return;
+  }
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(lstatSync(systemPath).isSymbolicLink(), true);
+  assert.match(result.stdout, /Successfully linked tool/);
+});
+
+test("CLI deploy uses repository-local config for freshly cloned dotfiles", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  const repoPath = join(dotfilesDir, "nvim");
+  const systemPath = join(root, ".config", "nvim");
+  mkdirSync(repoPath, { recursive: true });
+  writeFileSync(join(repoPath, "init.lua"), "vim.opt.number = true\n");
+  writeFileSync(
+    join(dotfilesDir, "config.jsonc"),
+    JSON.stringify({ links: [{ name: "nvim", systemPath }] }),
+  );
+
+  const result = runCli(["deploy"], env);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(lstatSync(systemPath).isDirectory(), true);
+  assert.equal(lstatSync(systemPath).isSymbolicLink(), false);
+  assert.equal(readFileSync(join(systemPath, "init.lua"), "utf-8"), "vim.opt.number = true\n");
+  assert.match(result.stdout, /Successfully deployed nvim/);
+});
+
+test("CLI deploy backs up an existing system config before copying", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  const repoPath = join(dotfilesDir, "nvim");
+  const systemParent = join(root, ".config");
+  const systemPath = join(systemParent, "nvim");
+  mkdirSync(repoPath, { recursive: true });
+  mkdirSync(systemPath, { recursive: true });
+  writeFileSync(join(repoPath, "init.lua"), "repo config\n");
+  writeFileSync(join(systemPath, "init.lua"), "local config\n");
+  writeConfig(
+    root,
+    JSON.stringify({ dotfilesDir, links: [{ name: "nvim", systemPath }] }),
+  );
+
+  const result = runCli(["deploy"], env);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(join(systemPath, "init.lua"), "utf-8"), "repo config\n");
+  const backupName = readdirSync(systemParent).find((entry) =>
+    entry.startsWith("nvim_backup_"),
+  );
+  assert.notEqual(backupName, undefined);
+  assert.equal(readFileSync(join(systemParent, backupName, "init.lua"), "utf-8"), "local config\n");
+  assert.match(result.stdout, /Backup created successfully/);
+  assert.match(result.stdout, /Successfully deployed nvim/);
+});
+
 test("CLI link fails when the config cannot be parsed", (t) => {
   const { root, env } = createTempHome(t);
   writeConfig(root, "{ invalid");
@@ -139,6 +235,16 @@ test("CLI link fails when the config cannot be parsed", (t) => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Failed to parse config/);
+  assert.doesNotMatch(result.stdout, /Restoring Dotfiles Links/);
+});
+
+test("CLI reports a missing explicit config path", (t) => {
+  const { env } = createTempHome(t);
+
+  const result = runCli(["link", "--config"], env);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--config requires a file path/);
   assert.doesNotMatch(result.stdout, /Restoring Dotfiles Links/);
 });
 

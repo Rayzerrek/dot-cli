@@ -55,6 +55,9 @@ A lightweight CLI manager to keep system configurations (dotfiles) in sync.
 ${bold("USAGE:")}
   dot <command> [options]
 
+${bold("OPTIONS:")}
+  ${green("-c, --config <path>")} Use a specific config file.
+
 ${bold("COMMANDS:")}
   ${green("init")}               Create the default configuration file.
   ${green("version")}            Display the installed dot-cli version.
@@ -62,6 +65,7 @@ ${bold("COMMANDS:")}
                           If no commit message is provided, one will be auto-generated.
   ${green("status")}             Check the state of system links and the git repository.
   ${green("link")}               Restore or recreate missing system links dynamically.
+  ${green("deploy")}             Copy dotfiles into their configured system locations.
   ${green("help")}               Display this help message.
 `);
 }

@@ -9,7 +9,7 @@ import {
 } from "fs";
 import { type ParseError, parse, printParseErrorCode } from "jsonc-parser";
 import { homedir } from "os";
-import { isAbsolute, join, relative } from "path";
+import { dirname, isAbsolute, join, relative } from "path";
 
 import { normalizePath } from "./paths.js";
 import { errorMessage, safeLstat } from "./system.js";
@@ -35,6 +35,18 @@ import {
 // Default location for config + cache files (~/.config/dot)
 const DOT_DIR = join(homedir(), ".config", "dot");
 const DEFAULT_CONFIG_PATH = join(DOT_DIR, "config.jsonc");
+
+type ConfigOrigin = "explicit" | "global" | "repository";
+
+interface ConfigFile {
+  content: string;
+  path: string;
+  origin: ConfigOrigin;
+}
+
+function defaultDotfilesDir(): string {
+  return normalizePath(process.env.DOTFILES_DIR ?? "~/dotfiles");
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -188,30 +200,48 @@ function validateConfig(raw: unknown): DotConfig {
 }
 
 /**
- * Searches for the first existing configuration file in the conventional candidates list.
+ * Searches for the first existing configuration file.
  *
+ * Global config files keep the historic default `dotfilesDir`. Repository-local
+ * config files make freshly cloned dotfiles portable: when `dotfilesDir` is not
+ * set, the repository directory is inferred from the config file location.
+ *
+ * @param configPath - Optional explicit config path supplied by the CLI.
  * @returns An object containing the config content and its absolute path, or `null` if none found.
  */
-export function findConfigFile(): { content: string; path: string } | null {
-  const candidates = [
-    DEFAULT_CONFIG_PATH,
-    join(DOT_DIR, "config.json"),
-    join(homedir(), ".dotrc.jsonc"),
-    join(homedir(), ".dotrc.json"),
-  ];
+export function findConfigFile(configPath?: string): ConfigFile | null {
+  const repositoryDir = defaultDotfilesDir();
+  const candidates: Array<{ path: string; origin: ConfigOrigin }> = configPath
+    ? [{ path: normalizePath(configPath), origin: "explicit" }]
+    : [
+        { path: DEFAULT_CONFIG_PATH, origin: "global" },
+        { path: join(DOT_DIR, "config.json"), origin: "global" },
+        { path: join(homedir(), ".dotrc.jsonc"), origin: "global" },
+        { path: join(homedir(), ".dotrc.json"), origin: "global" },
+        { path: join(repositoryDir, "config.jsonc"), origin: "repository" },
+        { path: join(repositoryDir, "config.json"), origin: "repository" },
+        { path: join(repositoryDir, "dot.config.jsonc"), origin: "repository" },
+        { path: join(repositoryDir, "dot.config.json"), origin: "repository" },
+      ];
 
-  for (const path of candidates) {
-    const stat = safeLstat(path);
+  for (const candidate of candidates) {
+    const stat = safeLstat(candidate.path);
     if (!stat) continue;
     if (!stat.isFile()) {
-      logWarning(`Skipping config candidate because it is not a file: ${path}`);
+      logWarning(
+        `Skipping config candidate because it is not a file: ${candidate.path}`,
+      );
       continue;
     }
     try {
-      return { content: readFileSync(path, "utf-8"), path };
+      return {
+        content: readFileSync(candidate.path, "utf-8"),
+        path: candidate.path,
+        origin: candidate.origin,
+      };
     } catch (err) {
       logWarning(
-        `Found config file at ${path} but failed to read it: ${errorMessage(err)}`,
+        `Found config file at ${candidate.path} but failed to read it: ${errorMessage(err)}`,
       );
     }
   }
@@ -250,10 +280,17 @@ function notifyOnConfigChange(content: string, path: string): void {
  * @returns A tagged result containing either the resolved application
  * configuration or a parse/validation error.
  */
-export function loadConfiguration():
+export function loadConfiguration(configPath?: string):
   | { ok: true; config: AppConfig }
   | { ok: false; error: string } {
-  const found = findConfigFile();
+  const found = findConfigFile(configPath);
+
+  if (!found && configPath) {
+    return {
+      ok: false,
+      error: `Config file not found: ${normalizePath(configPath)}`,
+    };
+  }
 
   let configData: DotConfig = {};
   if (found) {
@@ -273,9 +310,15 @@ export function loadConfiguration():
     logInfo(`See: https://github.com/Rayzerrek/dot-cli#configuration`);
   }
 
-  // Resolve dotfiles directory (config > env > default)
+  const inferredRepositoryDir =
+    found && found.origin !== "global" ? dirname(found.path) : undefined;
+
+  // Resolve dotfiles directory (config > env > repository-local config dir > default)
   const dotfilesDir = normalizePath(
-    configData.dotfilesDir ?? process.env.DOTFILES_DIR ?? "~/dotfiles",
+    configData.dotfilesDir ??
+      process.env.DOTFILES_DIR ??
+      inferredRepositoryDir ??
+      "~/dotfiles",
   );
 
   // Resolve links for the current platform

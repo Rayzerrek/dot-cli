@@ -49,7 +49,16 @@ The CLI supports dynamic links and custom repository locations using a `config.j
    ```bash
    cp config.example.jsonc ~/.config/dot/config.jsonc
    ```
-3. Edit `~/.config/dot/config.jsonc` to define your links. 
+3. Edit `~/.config/dot/config.jsonc` to define your links.
+
+For freshly cloned dotfiles, you can also keep a portable config directly in the dotfiles repository:
+
+```bash
+git clone <your-dotfiles-repo> ~/dotfiles
+dot deploy
+```
+
+When no global config exists, `dot` also looks for `config.jsonc`, `config.json`, `dot.config.jsonc`, or `dot.config.json` inside `~/dotfiles` (or `$DOTFILES_DIR`). If that repository-local config omits `dotfilesDir`, the repository folder is used automatically.
 
 ### Configuration Format
 
@@ -84,6 +93,12 @@ dot init
 
 # Restore or recreate missing system links 
 dot link
+
+# Copy dotfiles into their configured system locations instead of linking
+dot deploy
+
+# Use a config from a non-default cloned dotfiles directory
+dot link --config ~/my-dotfiles/config.jsonc
 
 # Stage, commit, and push changes to your dotfiles repository
 dot update [optional_message]
