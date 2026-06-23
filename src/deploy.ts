@@ -1,7 +1,11 @@
-import { cpSync, mkdirSync, renameSync, unlinkSync } from "fs";
+import { cpSync, mkdirSync } from "fs";
 import { dirname } from "path";
 
-import { errorMessage, safeLstat } from "./system.js";
+import {
+  errorMessage,
+  preparePathForReplacement,
+  safeLstat,
+} from "./system.js";
 import {
   bold,
   header,
@@ -38,33 +42,24 @@ export function handleDeploy({ links }: AppConfig): boolean {
       continue;
     }
 
-    const destinationStat = safeLstat(link.systemPath);
-    if (destinationStat) {
-      if (destinationStat.isSymbolicLink()) {
-        logInfo(
-          `Removing existing link at ${link.systemPath} before copying...`,
-        );
-        try {
-          unlinkSync(link.systemPath);
-        } catch (err) {
-          logError(`Failed to remove existing link: ${errorMessage(err)}`);
-          ok = false;
-          continue;
-        }
-      } else {
-        const targetBackupPath = `${link.systemPath}_backup_${Date.now()}`;
-        logWarning(
-          `Existing config detected at ${link.systemPath}. Creating backup at: ${targetBackupPath}...`,
-        );
-        try {
-          renameSync(link.systemPath, targetBackupPath);
-          logSuccess("Backup created successfully!");
-        } catch (err) {
-          logError(`Failed to create backup: ${errorMessage(err)}`);
-          ok = false;
-          continue;
-        }
-      }
+    const preparedDestination = preparePathForReplacement(link.systemPath);
+    if (!preparedDestination.ok) {
+      const message =
+        preparedDestination.action === "remove-link"
+          ? "Failed to remove existing link"
+          : "Failed to create backup";
+      logError(`${message}: ${preparedDestination.error}`);
+      ok = false;
+      continue;
+    }
+    if (preparedDestination.action === "removed-link") {
+      logInfo(`Removed existing link at ${link.systemPath} before copying.`);
+    }
+    if (preparedDestination.action === "created-backup") {
+      logWarning(
+        `Existing config detected at ${link.systemPath}. Created backup at: ${preparedDestination.backupPath}.`,
+      );
+      logSuccess("Backup created successfully!");
     }
 
     logInfo(`Copying '${link.repoPath}' to '${link.systemPath}'...`);

@@ -8,6 +8,9 @@ import { join, normalize, resolve } from "path";
  * @returns The absolute, normalized path.
  */
 export function normalizePath(p: string): string {
-  const expanded = p.startsWith("~") ? join(homedir(), p.slice(1)) : p;
+  if (p === "~") return resolve(homedir());
+
+  const hasHomePrefix = p.startsWith("~/") || p.startsWith("~\\");
+  const expanded = hasHomePrefix ? join(homedir(), p.slice(2)) : p;
   return resolve(normalize(expanded));
 }

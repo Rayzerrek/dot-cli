@@ -10,7 +10,11 @@ import { homedir } from "os";
 import { dirname, isAbsolute, join, resolve } from "path";
 
 import { normalizePath } from "./paths.js";
-import { errorMessage, safeLstat } from "./system.js";
+import {
+  errorMessage,
+  preparePathForReplacement,
+  safeLstat,
+} from "./system.js";
 import {
   bold,
   header,
@@ -218,33 +222,24 @@ export function handleLink(config: AppConfig): boolean {
       continue;
     }
 
-    // Handle existing target by creating a backup (if physical folder) or removing the invalid link
-    const stat = safeLstat(link.systemPath);
-    if (stat) {
-      if (!stat.isSymbolicLink()) {
-        const backupPath = `${link.systemPath}_backup_${Date.now()}`;
-        logWarning(
-          `Physical folder detected at ${link.systemPath}. Creating backup at: ${backupPath}...`,
-        );
-        try {
-          renameSync(link.systemPath, backupPath);
-          logSuccess(`Backup created successfully!`);
-        } catch (err) {
-          logError(`Failed to create backup: ${errorMessage(err)}`);
-          ok = false;
-          continue;
-        }
-      } else {
-        logInfo(`Removing invalid or incorrect link at ${link.systemPath}...`);
-        try {
-          // unlinkSync is required for Windows/Bun junction support
-          unlinkSync(link.systemPath);
-        } catch (err) {
-          logError(`Failed to remove old link: ${errorMessage(err)}`);
-          ok = false;
-          continue;
-        }
-      }
+    const preparedSystemPath = preparePathForReplacement(link.systemPath);
+    if (!preparedSystemPath.ok) {
+      const message =
+        preparedSystemPath.action === "remove-link"
+          ? "Failed to remove old link"
+          : "Failed to create backup";
+      logError(`${message}: ${preparedSystemPath.error}`);
+      ok = false;
+      continue;
+    }
+    if (preparedSystemPath.action === "removed-link") {
+      logInfo(`Removed invalid or incorrect link at ${link.systemPath}.`);
+    }
+    if (preparedSystemPath.action === "created-backup") {
+      logWarning(
+        `Existing config detected at ${link.systemPath}. Created backup at: ${preparedSystemPath.backupPath}.`,
+      );
+      logSuccess(`Backup created successfully!`);
     }
 
     // Create new symbolic link or junction natively

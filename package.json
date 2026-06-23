@@ -23,7 +23,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "prebuild": "node scripts/write-version.mjs",
-    "build": "tsc",
+    "build": "tsgo",
     "test": "npm run build && node --test test/*.mjs",
     "prepare": "npm run build"
   },
@@ -32,6 +32,6 @@
   },
   "devDependencies": {
     "@types/node": "^24.12.4",
-    "typescript": "^6.0.3"
+    "@typescript/native-preview": "^7.0.0-dev.20260623.1"
   }
 }

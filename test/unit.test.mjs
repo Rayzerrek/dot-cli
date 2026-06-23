@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import test from "node:test";
@@ -8,7 +8,7 @@ import { buildInitialConfigContent } from "../dist/config.js";
 import { buildCommitMessage } from "../dist/git.js";
 import { checkJunction } from "../dist/links.js";
 import { normalizePath } from "../dist/paths.js";
-import { runCmd } from "../dist/system.js";
+import { preparePathForReplacement, runCmd } from "../dist/system.js";
 import {
   createDirectorySymlinkOrSkip,
   createTempDir,
@@ -51,11 +51,49 @@ test("buildCommitMessage matches complete top-level path segments", () => {
   assert.match(message, /^update: general, nvim config \(\d{4}-\d{2}-\d{2}\)$/);
 });
 
-test("normalizePath expands a home-directory path to an absolute path", () => {
+test("normalizePath expands home-directory shortcuts to absolute paths", () => {
+  assert.equal(normalizePath("~"), resolve(homedir()));
   assert.equal(
     normalizePath("~/dotfiles"),
     resolve(join(homedir(), "dotfiles")),
   );
+});
+
+test("normalizePath does not treat tilde-prefixed names as home paths", () => {
+  assert.equal(normalizePath("~dotfiles"), resolve("~dotfiles"));
+});
+
+test("preparePathForReplacement backs up physical paths", (t) => {
+  const root = createTempDir(t, "dot-cli-unit-");
+  const systemPath = join(root, "tool");
+  mkdirSync(systemPath, { recursive: true });
+
+  const result = preparePathForReplacement(systemPath);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.action, "created-backup");
+  assert.equal(existsSync(systemPath), false);
+  if (result.action === "created-backup") {
+    assert.equal(existsSync(result.backupPath), true);
+  }
+});
+
+test("preparePathForReplacement removes link entries without touching targets", (t) => {
+  const root = createTempDir(t, "dot-cli-unit-");
+  const target = join(root, "repo", "tool");
+  const systemPath = join(root, "system", "tool");
+  mkdirSync(target, { recursive: true });
+  mkdirSync(join(root, "system"), { recursive: true });
+
+  if (!createDirectorySymlinkOrSkip(t, target, systemPath)) {
+    return;
+  }
+
+  const result = preparePathForReplacement(systemPath);
+
+  assert.deepEqual(result, { ok: true, action: "removed-link" });
+  assert.equal(existsSync(systemPath), false);
+  assert.equal(existsSync(target), true);
 });
 
 test("runCmd returns raw structured output for successful and failing commands", () => {

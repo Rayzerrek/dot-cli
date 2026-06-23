@@ -1,11 +1,17 @@
 import { spawnSync } from "child_process";
-import { type Stats, lstatSync } from "fs";
+import { type Stats, lstatSync, renameSync, unlinkSync } from "fs";
 
 export interface CommandResult {
   success: boolean;
   stdout: string;
   stderr: string;
 }
+
+type PreparedPathResult =
+  | { ok: true; action: "none" }
+  | { ok: true; action: "removed-link" }
+  | { ok: true; action: "created-backup"; backupPath: string }
+  | { ok: false; action: "remove-link" | "create-backup"; error: string };
 
 /** Converts an unknown caught value into a user-facing error message. */
 export function errorMessage(err: unknown): string {
@@ -24,6 +30,44 @@ export function safeLstat(path: string): Stats | null {
     return lstatSync(path);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Makes an existing filesystem path safe to replace.
+ *
+ * Symbolic links and Windows junction entries are unlinked without touching
+ * their targets. Physical files/directories are moved to a timestamped backup.
+ */
+export function preparePathForReplacement(path: string): PreparedPathResult {
+  const stat = safeLstat(path);
+  if (!stat) return { ok: true, action: "none" };
+
+  if (stat.isSymbolicLink()) {
+    try {
+      // unlinkSync removes the link entry itself. On Windows, this is required
+      // for junctions where recursive removal can fail or target real files.
+      unlinkSync(path);
+      return { ok: true, action: "removed-link" };
+    } catch (err) {
+      return {
+        ok: false,
+        action: "remove-link",
+        error: errorMessage(err),
+      };
+    }
+  }
+
+  const backupPath = `${path}_backup_${Date.now()}`;
+  try {
+    renameSync(path, backupPath);
+    return { ok: true, action: "created-backup", backupPath };
+  } catch (err) {
+    return {
+      ok: false,
+      action: "create-backup",
+      error: errorMessage(err),
+    };
   }
 }
 
