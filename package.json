@@ -1,6 +1,6 @@
 {
   "name": "@rayzerrek/dot-cli",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "description": "Lightweight, cross-platform CLI manager to keep configurations (dotfiles) in sync",
   "homepage": "https://github.com/Rayzerrek/dot-cli#readme",
   "bugs": {

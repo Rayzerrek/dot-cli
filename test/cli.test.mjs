@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -139,6 +140,46 @@ test("CLI link creates the system path parent directory before linking", (t) => 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(lstatSync(systemPath).isSymbolicLink(), true);
   assert.match(result.stdout, /Successfully linked tool/);
+});
+
+test("CLI link migrates a local file and replaces it with a file link", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  const repoPath = join(dotfilesDir, "gitconfig");
+  const systemPath = join(root, "system", ".gitconfig");
+  mkdirSync(dotfilesDir, { recursive: true });
+  mkdirSync(join(root, "system"), { recursive: true });
+  writeFileSync(systemPath, "[user]\n  name = Developer\n");
+
+  writeConfig(
+    root,
+    JSON.stringify({
+      dotfilesDir,
+      links: [{ name: "gitconfig", systemPath }],
+    }),
+  );
+
+  const result = runCli(["link"], env);
+
+  if (
+    result.status !== 0 &&
+    /EPERM|EACCES|privilege|permission/i.test(result.stderr)
+  ) {
+    assert.equal(existsSync(systemPath), true);
+    assert.equal(readFileSync(systemPath, "utf-8"), "[user]\n  name = Developer\n");
+    assert.equal(existsSync(repoPath), false);
+    t.skip(`file symlink creation is unavailable: ${result.stderr}`);
+    return;
+  }
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(lstatSync(systemPath).isSymbolicLink(), true);
+  assert.equal(
+    readFileSync(repoPath, "utf-8"),
+    "[user]\n  name = Developer\n",
+  );
+  assert.match(result.stdout, /Successfully moved files/);
+  assert.match(result.stdout, /Successfully linked gitconfig/);
 });
 
 test("CLI link uses repository-local config for freshly cloned dotfiles", (t) => {
@@ -372,6 +413,26 @@ test("CLI link accepts JSONC comments and does not print restore header for empt
   assert.doesNotMatch(result.stdout, /Restoring Dotfiles Links/);
 });
 
+test("CLI does not rewrite the config hash cache when configuration is unchanged", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  mkdirSync(dotfilesDir, { recursive: true });
+  writeConfig(root, JSON.stringify({ dotfilesDir, links: [] }));
+
+  const firstRun = runCli(["link"], env);
+  assert.equal(firstRun.status, 0, firstRun.stderr);
+
+  const hashPath = join(root, ".config", "dot", ".config-hash");
+  const firstStat = lstatSync(hashPath);
+  const firstHash = readFileSync(hashPath, "utf-8");
+
+  const secondRun = runCli(["link"], env);
+  assert.equal(secondRun.status, 0, secondRun.stderr);
+  assert.equal(lstatSync(hashPath).mtimeMs, firstStat.mtimeMs);
+  assert.equal(readFileSync(hashPath, "utf-8"), firstHash);
+  assert.doesNotMatch(secondRun.stdout, /Configuration changed/);
+});
+
 test("CLI link cleans stale links without processing an empty link list", (t) => {
   const { root, env } = createTempHome(t);
   const dotfilesDir = join(root, "dotfiles");
@@ -395,6 +456,66 @@ test("CLI link cleans stale links without processing an empty link list", (t) =>
   assert.doesNotMatch(result.stdout, /Restoring Dotfiles Links/);
 });
 
+test("CLI link removes stale file links without touching repository files", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  const repoPath = join(dotfilesDir, "old-file");
+  const staleParent = join(root, ".config");
+  const stalePath = join(staleParent, "old-file");
+  mkdirSync(dotfilesDir, { recursive: true });
+  mkdirSync(staleParent, { recursive: true });
+  writeFileSync(repoPath, "preserved\n");
+
+  try {
+    symlinkSync(repoPath, stalePath, "file");
+  } catch (err) {
+    t.skip(`file symlink creation is unavailable: ${String(err)}`);
+    return;
+  }
+
+  writeConfig(root, JSON.stringify({ dotfilesDir, links: [] }));
+
+  const result = runCli(["link"], env);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(stalePath), false);
+  assert.equal(readFileSync(repoPath, "utf-8"), "preserved\n");
+  assert.match(result.stdout, /Removed stale link/);
+  assert.doesNotMatch(result.stdout, /Restoring Dotfiles Links/);
+});
+
+test("CLI update requires --yes in a non-interactive terminal", (t) => {
+  if (skipWhenGitUnavailable(t)) {
+    return;
+  }
+
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  mkdirSync(dotfilesDir, { recursive: true });
+  const gitInit = spawnSync("git", ["init"], {
+    cwd: dotfilesDir,
+    env,
+    encoding: "utf-8",
+  });
+  assert.equal(gitInit.status, 0, gitInit.stderr);
+  const changedPath = join(dotfilesDir, "README.md");
+  writeFileSync(changedPath, "changed\n");
+  writeConfig(root, JSON.stringify({ dotfilesDir, links: [] }));
+
+  const result = runCli(["update"], env);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /Non-interactive terminal detected/);
+  assert.match(result.stdout, /--yes or -y/);
+  assert.equal(existsSync(changedPath), true);
+  const status = spawnSync("git", ["status", "--porcelain"], {
+    cwd: dotfilesDir,
+    env,
+    encoding: "utf-8",
+  });
+  assert.match(status.stdout, /^\?\? README\.md/m);
+});
+
 test("CLI update fails clearly before commit when git identity is missing", (t) => {
   if (skipWhenGitUnavailable(t)) {
     return;
@@ -412,7 +533,7 @@ test("CLI update fails clearly before commit when git identity is missing", (t) 
   writeFileSync(join(dotfilesDir, "README.md"), "changed\n");
   writeConfig(root, JSON.stringify({ dotfilesDir, links: [] }));
 
-  const result = runCli(["update"], {
+  const result = runCli(["update", "--yes"], {
     ...env,
     GIT_CONFIG_GLOBAL: join(root, "missing-global-gitconfig"),
     GIT_CONFIG_NOSYSTEM: "1",
@@ -421,4 +542,19 @@ test("CLI update fails clearly before commit when git identity is missing", (t) 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Git user\.email is not configured/);
   assert.doesNotMatch(result.stdout, /Staging changes/);
+});
+
+test("CLI update rejects unknown options and supports literal message flags after --", (t) => {
+  const { root, env } = createTempHome(t);
+  writeConfig(root, JSON.stringify({ dotfilesDir: join(root, "missing"), links: [] }));
+
+  const unknownOption = runCli(["update", "--typo"], env);
+  assert.equal(unknownOption.status, 1);
+  assert.match(unknownOption.stderr, /Unknown update option: "--typo"/);
+  assert.doesNotMatch(unknownOption.stderr, /repository directory does not exist/);
+
+  const literalFlag = runCli(["update", "--", "--yes"], env);
+  assert.equal(literalFlag.status, 1);
+  assert.match(literalFlag.stderr, /repository directory does not exist/);
+  assert.doesNotMatch(literalFlag.stderr, /Unknown update option/);
 });

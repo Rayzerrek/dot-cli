@@ -77,8 +77,8 @@ When no global config exists, `dot` also looks for `config.jsonc`, `config.json`
 ```
 
 - **`dotfilesDir`**: The absolute path to your central dotfiles repository (defaults to `~/dotfiles` or `DOTFILES_DIR` environment variable).
-- **`links`**: An array of folders to link:
-  - **`name`**: The directory name in your dotfiles repository and the label shown in the CLI.
+- **`links`**: An array of files or directories to link:
+  - **`name`**: The file or directory name in your dotfiles repository and the label shown in the CLI.
   - **`systemPath`**: The destination path where the link should sit on the system (can be a plain string, or a platform-specific object supporting `windows`, `macos`, and `linux`).
 
 ## Usage
@@ -101,6 +101,9 @@ dot link --config ~/my-dotfiles/config.jsonc
 
 # Stage, commit, and push changes to your dotfiles repository
 dot update [optional_message]
+
+# Skip the confirmation prompt in CI and other non-interactive environments
+dot update --yes [optional_message]
 
 # Display installed version
 dot --version

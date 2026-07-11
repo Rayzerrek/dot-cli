@@ -6,6 +6,25 @@ This project follows npm package versions published for `@rayzerrek/dot-cli`.
 
 ## [Unreleased]
 
+## [1.0.26] - 2026-07-11
+
+### Added
+
+- Added interactive confirmation to `dot update`, with `-y` / `--yes` for automation.
+- Added support for linking and migrating individual files in addition to directories.
+
+### Changed
+
+- Reduced unnecessary Git subprocesses when an update is cancelled.
+- Avoided rewriting the configuration hash cache when the configuration is unchanged.
+- Added strict update-option parsing and support for literal commit message flags after `--`.
+
+### Fixed
+
+- Fixed status messages for file and directory conflicts.
+- Restored migrated configurations when link creation fails.
+- Included stale file links in safe link cleanup.
+
 ## [1.0.25] - 2026-06-08
 
 ### Added
@@ -106,7 +125,8 @@ This project follows npm package versions published for `@rayzerrek/dot-cli`.
 - Added Bun-based fast builds.
 - Added configuration auto-migration.
 
-[Unreleased]: https://github.com/Rayzerrek/dot-cli/compare/v1.0.25...HEAD
+[Unreleased]: https://github.com/Rayzerrek/dot-cli/compare/v1.0.26...HEAD
+[1.0.26]: https://github.com/Rayzerrek/dot-cli/compare/v1.0.25...v1.0.26
 [1.0.25]: https://github.com/Rayzerrek/dot-cli/compare/v1.0.24...v1.0.25
 [1.0.24]: https://github.com/Rayzerrek/dot-cli/releases/tag/v1.0.24
 [1.0.23]: https://github.com/Rayzerrek/dot-cli/releases/tag/v1.0.23

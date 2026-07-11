@@ -38,14 +38,29 @@ function resolveLinkTarget(linkPath: string, target: string): string {
  * them. Repair and migration decisions are handled by {@link handleLink}.
  */
 export function checkJunction(config: ResolvedLink): LinkCheckResult {
+  const repoStat = safeLstat(config.repoPath);
+  if (!repoStat) {
+    return { linked: false, message: "Target does not exist in repository" };
+  }
+
   const stat = safeLstat(config.systemPath);
   if (!stat) {
-    return { linked: false, message: "Directory does not exist in system" };
-  }
-  if (!stat.isSymbolicLink()) {
     return {
       linked: false,
-      message: "Physical directory exists, but is not a link",
+      message: repoStat.isDirectory()
+        ? "Directory does not exist in system"
+        : "File does not exist in system",
+    };
+  }
+  if (!stat.isSymbolicLink()) {
+    const pathType = stat.isDirectory()
+      ? "directory"
+      : stat.isFile()
+        ? "file"
+        : "path";
+    return {
+      linked: false,
+      message: `Physical ${pathType} exists, but is not a link`,
     };
   }
   try {
@@ -99,7 +114,10 @@ function cleanStaleLinks({ dotfilesDir, links }: AppConfig): boolean {
   try {
     dotfileNames = readdirSync(dotfilesDir, { withFileTypes: true })
       // Skip git metadata; other dotfiles/directories are valid candidates
-      .filter((entry) => entry.isDirectory() && entry.name !== ".git")
+      .filter(
+        (entry) =>
+          (entry.isDirectory() || entry.isFile()) && entry.name !== ".git",
+      )
       .map((entry) => entry.name);
   } catch (err) {
     logWarning(
@@ -186,19 +204,21 @@ export function handleLink(config: AppConfig): boolean {
   for (const link of links) {
     console.log(`\nProcessing ${bold(link.name)}...`);
 
-    // Ensure source directory exists; migrate local system files if missing from repository
-    if (!safeLstat(link.repoPath)) {
+    // Ensure source exists; migrate local system files if missing from repository
+    let repoStat = safeLstat(link.repoPath);
+    let migratedFromSystem = false;
+    if (!repoStat) {
       const localStat = safeLstat(link.systemPath);
       if (!localStat || localStat.isSymbolicLink()) {
         logError(
-          `Source directory does not exist in repository: ${link.repoPath}. Skipping.`,
+          `Source does not exist in repository: ${link.repoPath}. Skipping.`,
         );
         ok = false;
         continue;
       }
-      if (!localStat.isDirectory()) {
+      if (!localStat.isDirectory() && !localStat.isFile()) {
         logError(
-          `Local configuration path is not a directory: ${link.systemPath}. Skipping.`,
+          `Local configuration path is not a file or directory: ${link.systemPath}. Skipping.`,
         );
         ok = false;
         continue;
@@ -209,12 +229,22 @@ export function handleLink(config: AppConfig): boolean {
       try {
         mkdirSync(dirname(link.repoPath), { recursive: true });
         renameSync(link.systemPath, link.repoPath);
+        repoStat = localStat;
+        migratedFromSystem = true;
         logSuccess(`Successfully moved files to ${link.repoPath}!`);
       } catch (err) {
         logError(`Failed to move files: ${errorMessage(err)}`);
         ok = false;
         continue;
       }
+    }
+
+    if (!repoStat.isDirectory() && !repoStat.isFile()) {
+      logError(
+        `Repository source is not a file or directory: ${link.repoPath}. Skipping.`,
+      );
+      ok = false;
+      continue;
     }
 
     if (checkJunction(link).linked) {
@@ -246,11 +276,32 @@ export function handleLink(config: AppConfig): boolean {
     logInfo(`Creating link from '${link.systemPath}' to '${link.repoPath}'...`);
     try {
       mkdirSync(dirname(link.systemPath), { recursive: true });
-      const type = process.platform === "win32" ? "junction" : "dir";
+      let type: "dir" | "file" | "junction" = "dir";
+      if (process.platform === "win32") {
+        type = repoStat.isDirectory() ? "junction" : "file";
+      }
       symlinkSync(link.repoPath, link.systemPath, type);
       logSuccess(`Successfully linked ${link.name}!`);
     } catch (err) {
       logError(`Error creating link: ${errorMessage(err)}`);
+      if (migratedFromSystem) {
+        if (safeLstat(link.systemPath)) {
+          logWarning(
+            `Could not restore the migrated configuration because ${link.systemPath} now exists. The migrated copy remains at ${link.repoPath}.`,
+          );
+        } else {
+          try {
+            renameSync(link.repoPath, link.systemPath);
+            logWarning(
+              `Restored the migrated configuration to ${link.systemPath}.`,
+            );
+          } catch (rollbackError) {
+            logError(
+              `Failed to restore migrated configuration from ${link.repoPath} to ${link.systemPath}: ${errorMessage(rollbackError)}`,
+            );
+          }
+        }
+      }
       ok = false;
     }
   }

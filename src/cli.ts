@@ -27,12 +27,18 @@ function parseCliArgs(
   | { ok: false; error: string } {
   const parsedArgs: string[] = [];
   let configPath: string | undefined;
+  let optionsEnded = false;
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
-    if (arg === "--config" || arg === "-c") {
+    if (arg === "--") {
+      optionsEnded = true;
+      parsedArgs.push(arg);
+      continue;
+    }
+    if (!optionsEnded && (arg === "--config" || arg === "-c")) {
       const value = args[i + 1];
-      if (value === undefined) {
+      if (value === undefined || value.startsWith("-")) {
         return { ok: false, error: `${arg} requires a file path` };
       }
       configPath = value;
@@ -45,6 +51,36 @@ function parseCliArgs(
   return configPath === undefined
     ? { ok: true, args: parsedArgs }
     : { ok: true, args: parsedArgs, configPath };
+}
+
+function parseUpdateArgs(
+  args: string[],
+):
+  | { ok: true; autoApprove: boolean; commitMessage?: string }
+  | { ok: false; error: string } {
+  const messageParts: string[] = [];
+  let autoApprove = false;
+  let optionsEnded = false;
+
+  for (const arg of args.slice(1)) {
+    if (!optionsEnded && arg === "--") {
+      optionsEnded = true;
+      continue;
+    }
+    if (!optionsEnded && (arg === "--yes" || arg === "-y")) {
+      autoApprove = true;
+      continue;
+    }
+    if (!optionsEnded && arg.startsWith("-")) {
+      return { ok: false, error: `Unknown update option: "${arg}"` };
+    }
+    messageParts.push(arg);
+  }
+
+  const commitMessage = messageParts.join(" ");
+  return commitMessage
+    ? { ok: true, autoApprove, commitMessage }
+    : { ok: true, autoApprove };
 }
 
 /**
@@ -88,9 +124,19 @@ export function main(args: string[] = process.argv.slice(2)): void {
       break;
     }
     case "update": {
-      const msg = parsed.args.slice(1).join(" ");
+      const updateArgs = parseUpdateArgs(parsed.args);
+      if (!updateArgs.ok) {
+        logError(updateArgs.error);
+        ok = false;
+        break;
+      }
       ok = runWithConfiguration(
-        (config) => handleUpdate(config, msg || undefined),
+        (config) =>
+          handleUpdate(
+            config,
+            updateArgs.commitMessage,
+            updateArgs.autoApprove,
+          ),
         parsed.configPath,
       );
       break;

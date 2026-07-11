@@ -262,14 +262,16 @@ function notifyOnConfigChange(content: string, path: string): void {
   try {
     previousHash = readFileSync(hashFile, "utf-8").trim();
   } catch {}
-  if (previousHash && previousHash !== currentHash) {
-    logInfo(`Configuration changed (${path})`);
-  }
-  try {
-    mkdirSync(DOT_DIR, { recursive: true });
-    writeFileSync(hashFile, currentHash);
-  } catch (err) {
-    logWarning(`Could not update config change cache: ${errorMessage(err)}`);
+  if (previousHash !== currentHash) {
+    if (previousHash) {
+      logInfo(`Configuration changed (${path})`);
+    }
+    try {
+      mkdirSync(DOT_DIR, { recursive: true });
+      writeFileSync(hashFile, currentHash);
+    } catch (err) {
+      logWarning(`Could not update config change cache: ${errorMessage(err)}`);
+    }
   }
 }
 

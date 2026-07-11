@@ -61,8 +61,9 @@ ${bold("OPTIONS:")}
 ${bold("COMMANDS:")}
   ${green("init")}               Create the default configuration file.
   ${green("version")}            Display the installed dot-cli version.
-  ${green("update [message]")}  Stage, commit, and push dotfiles changes to GitHub.
+  ${green("update [message] [-y/--yes]")} Stage, commit, and push dotfiles changes to GitHub.
                           If no commit message is provided, one will be auto-generated.
+                          Use -y/--yes to skip interactive confirmation.
   ${green("status")}             Check the state of system links and the git repository.
   ${green("link")}               Restore or recreate missing system links dynamically.
   ${green("deploy")}             Copy dotfiles into their configured system locations.

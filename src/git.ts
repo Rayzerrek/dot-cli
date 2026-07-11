@@ -9,6 +9,7 @@ import {
   logInfo,
   logSuccess,
   logWarning,
+  promptInput,
   red,
   yellow,
 } from "./ui.js";
@@ -82,6 +83,7 @@ export function buildCommitMessage(
 export function handleUpdate(
   { dotfilesDir, links }: AppConfig,
   commitMessage?: string,
+  autoApprove: boolean = false,
 ): boolean {
   console.log(header("Updating Dotfiles"));
 
@@ -104,6 +106,28 @@ export function handleUpdate(
     return true;
   }
 
+  const lines = statusText.split(/\r?\n/);
+
+  // Display changes to be pushed
+  console.log(`\n${bold("Detected changes to push:")}`);
+  for (const line of lines) {
+    console.log(`  ${gray(line)}`);
+  }
+  console.log("");
+
+  if (!autoApprove) {
+    if (!process.stdin.isTTY) {
+      logWarning("Non-interactive terminal detected. To automatically commit and push, run with --yes or -y.");
+      logInfo("Update cancelled.");
+      return false;
+    }
+    const answer = promptInput("Proceed with staging, committing, and pushing these changes? (y/N): ");
+    if (answer.toLowerCase() !== "y" && answer.toLowerCase() !== "yes") {
+      logInfo("Update cancelled by user.");
+      return true;
+    }
+  }
+
   const emailRes = git("config", "user.email");
   if (!emailRes.success || !emailRes.stdout.trim()) {
     logError(
@@ -119,15 +143,6 @@ export function handleUpdate(
     );
     return false;
   }
-
-  const lines = statusText.split(/\r?\n/);
-
-  // Display changes to be pushed
-  console.log(`\n${bold("Detected changes to push:")}`);
-  for (const line of lines) {
-    console.log(`  ${gray(line)}`);
-  }
-  console.log("");
 
   // Prepare commit message
   const finalMsg = commitMessage ?? buildCommitMessage(lines, links);

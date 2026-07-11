@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import test from "node:test";
@@ -170,5 +170,30 @@ test("checkJunction resolves relative link targets from the link location", (t) 
   assert.deepEqual(checkJunction({ name: "nvim", repoPath, systemPath }), {
     linked: true,
     message: "Correct",
+  });
+});
+
+test("checkJunction reports missing repository target as unhealthy", (t) => {
+  const root = createTempDir(t, "dot-cli-unit-");
+  const repoPath = join(root, "repo", "nvim");
+  const systemPath = join(root, "system", "nvim");
+
+  assert.deepEqual(checkJunction({ name: "nvim", repoPath, systemPath }), {
+    linked: false,
+    message: "Target does not exist in repository",
+  });
+});
+
+test("checkJunction describes the physical system path rather than the repository target", (t) => {
+  const root = createTempDir(t, "dot-cli-unit-");
+  const repoPath = join(root, "repo", "gitconfig");
+  const systemPath = join(root, "system", "gitconfig");
+  mkdirSync(join(root, "repo"), { recursive: true });
+  mkdirSync(systemPath, { recursive: true });
+  writeFileSync(repoPath, "config\n");
+
+  assert.deepEqual(checkJunction({ name: "gitconfig", repoPath, systemPath }), {
+    linked: false,
+    message: "Physical directory exists, but is not a link",
   });
 });
