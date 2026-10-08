@@ -80,8 +80,8 @@ function preflightGitRepository(
       error: `Could not determine the repository root: ${root.stderr}`,
     };
   try {
-    const canonicalRoot = realpathSync(root.stdout.trim());
-    if (!sameFilesystemPath(canonicalRoot, realpathSync(dotfilesDir)))
+    const canonicalRoot = realpathSync.native(root.stdout.trim());
+    if (!sameFilesystemPath(canonicalRoot, realpathSync.native(dotfilesDir)))
       return {
         ok: false,
         error: `dotfilesDir must be the Git repository root: ${canonicalRoot}. Update your config before syncing.`,

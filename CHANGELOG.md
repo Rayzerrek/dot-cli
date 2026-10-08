@@ -38,6 +38,7 @@ This project follows npm package versions published for `@rayzerrek/dot-cli`.
 - Deploy refreshes Linux/macOS file and directory permissions even when contents match, including executable scripts.
 - Config validation reports syntax error line and column, rejects blank paths and overlapping destinations, accepts symlinked config files, and prevents circular paths through symlink aliases.
 - Windows link checks accept differences in path casing; subprocesses avoid opening extra console windows.
+- Windows repository checks resolve short path aliases; deployed Linux/macOS directories retain source permissions.
 
 ## [1.0.26] - 2026-07-11
 

@@ -121,7 +121,7 @@ function resolvePhysicalConfigPath(path: string): string {
     missingSegments.unshift(basename(ancestor));
     ancestor = parent;
   }
-  return join(realpathSync(ancestor), ...missingSegments);
+  return join(realpathSync.native(ancestor), ...missingSegments);
 }
 
 function physicalDestinationPath(systemPath: string): string {

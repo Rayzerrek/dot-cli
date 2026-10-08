@@ -301,6 +301,39 @@ test("update publishes a new branch even when its commits already exist on origi
   assert.equal(git("rev-parse", "HEAD"), commit);
 });
 
+test("update accepts Windows short path aliases for the repository", (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows short paths do not apply on this platform");
+    return;
+  }
+  if (skipWhenGitUnavailable(t)) return;
+  const { root, env, dotfilesDir, git } = gitRepository(t);
+  const alias = spawnSync(
+    "cmd.exe",
+    ["/d", "/c", 'for %I in ("%DOT_TEST_REPO%") do @echo %~fsI'],
+    {
+      env: { ...env, DOT_TEST_REPO: dotfilesDir },
+      encoding: "utf8",
+      windowsVerbatimArguments: true,
+    },
+  );
+  assert.equal(alias.status, 0, alias.stderr);
+  const shortPath = alias.stdout.trim();
+  assert.ok(shortPath && !shortPath.includes('"'), shortPath);
+  if (shortPath.toLowerCase() === dotfilesDir.toLowerCase()) {
+    t.skip("Short path aliases are unavailable on this volume");
+    return;
+  }
+  const remote = join(root, "remote.git");
+  assert.equal(spawnSync("git", ["init", "--bare", remote], { env }).status, 0);
+  git("remote", "add", "origin", remote);
+  writeFileSync(join(dotfilesDir, "settings"), "initial\n");
+  writeConfig(root, JSON.stringify({ dotfilesDir: shortPath, links: [] }));
+  const updated = runCli(["update", "--yes"], env);
+  assert.equal(updated.status, 0, updated.stderr);
+  assert.equal(git("rev-list", "--count", "HEAD"), "1");
+});
+
 test("update dry run shows the planned message without staging, committing or pushing", (t) => {
   if (skipWhenGitUnavailable(t)) return;
   const { root, env, dotfilesDir, git } = gitRepository(t);
@@ -399,6 +432,10 @@ test("deploy refreshes POSIX file and directory permissions when contents match"
   const privateDirectory = runCli(["deploy"], env);
   assert.equal(privateDirectory.status, 0, privateDirectory.stderr);
   assert.equal(statSync(destination).mode & 0o777, 0o700);
+  mkdirSync(join(source, "private"), { mode: 0o700 });
+  const privateNestedDirectory = runCli(["deploy"], env);
+  assert.equal(privateNestedDirectory.status, 0, privateNestedDirectory.stderr);
+  assert.equal(statSync(join(destination, "private")).mode & 0o777, 0o700);
 });
 
 test("symlink aliases cannot place a system destination inside the repository", (t) => {

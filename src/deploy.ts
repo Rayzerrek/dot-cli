@@ -1,4 +1,13 @@
-import { cpSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "fs";
+import {
+  chmodSync,
+  cpSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+} from "fs";
 import { basename, dirname, join } from "path";
 
 import { compareDotfileCopies } from "./copy-status.js";
@@ -18,6 +27,21 @@ import {
 } from "./ui.js";
 
 import type { AppConfig } from "./types.js";
+
+function preserveDirectoryPermissions(
+  source: string,
+  destination: string,
+): void {
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    if (entry.isDirectory())
+      preserveDirectoryPermissions(
+        join(source, entry.name),
+        join(destination, entry.name),
+      );
+  }
+  // cpSync preserves file modes, but creates directories with default permissions.
+  chmodSync(destination, lstatSync(source).mode & 0o777);
+}
 
 /**
  * Copies configured dotfiles from the repository into their system locations.
@@ -91,6 +115,8 @@ export function handleDeploy({ links }: AppConfig, dryRun = false): boolean {
         recursive: true,
         preserveTimestamps: true,
       });
+      if (process.platform !== "win32" && sourceStat.isDirectory())
+        preserveDirectoryPermissions(link.repoPath, stagedPath);
       const preparedDestination = preparePathForReplacement(link.systemPath);
       if (!preparedDestination.ok) {
         logError(`Failed to prepare destination: ${preparedDestination.error}`);
