@@ -25,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build package
-        run: npm run build
+      - name: Test package
+        run: npm test
 
       - name: Publish to NPM
         run: npm publish --access public --provenance

@@ -28,9 +28,9 @@ export function createTempHome(t) {
   return { root, env };
 }
 
-export function runCli(args, env) {
+export function runCli(args, env, cwd = process.cwd()) {
   return spawnSync(process.execPath, [CLI_PATH, ...args], {
-    cwd: process.cwd(),
+    cwd,
     env,
     encoding: "utf-8",
   });

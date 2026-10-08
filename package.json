@@ -1,7 +1,15 @@
 {
   "name": "@rayzerrek/dot-cli",
-  "version": "1.0.26",
-  "description": "Lightweight, cross-platform CLI manager to keep configurations (dotfiles) in sync",
+  "version": "1.1.0",
+  "description": "Link, copy, and commit dotfiles across Windows, macOS, and Linux",
+  "keywords": [
+    "dotfiles",
+    "cli",
+    "configuration",
+    "symlink",
+    "cross-platform",
+    "git"
+  ],
   "homepage": "https://github.com/Rayzerrek/dot-cli#readme",
   "bugs": {
     "url": "https://github.com/Rayzerrek/dot-cli/issues"
@@ -16,7 +24,8 @@
   },
   "files": [
     "dist/**/*.js",
-    "dist/**/*.d.ts"
+    "dist/**/*.d.ts",
+    "config.example.jsonc"
   ],
   "type": "module",
   "main": "dist/index.js",

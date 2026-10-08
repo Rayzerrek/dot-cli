@@ -14,3 +14,12 @@ export function normalizePath(p: string): string {
   const expanded = hasHomePrefix ? join(homedir(), p.slice(2)) : p;
   return resolve(normalize(expanded));
 }
+
+/** Compares normalized filesystem paths using Windows case-insensitive path semantics. */
+export function sameFilesystemPath(first: string, second: string): boolean {
+  const firstPath = normalizePath(first);
+  const secondPath = normalizePath(second);
+  return process.platform === "win32"
+    ? firstPath.toLowerCase() === secondPath.toLowerCase()
+    : firstPath === secondPath;
+}

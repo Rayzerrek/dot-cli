@@ -46,6 +46,126 @@ test("CLI version prints the package version without loading config", (t) => {
   assert.equal(result.stderr, "");
 });
 
+test("CLI command help never loads config or changes files", (t) => {
+  const { root, env } = createTempHome(t);
+  const dotfilesDir = join(root, "dotfiles");
+  const systemPath = join(root, "system", "tool");
+  mkdirSync(systemPath, { recursive: true });
+  writeFileSync(join(systemPath, "settings.json"), "preserved\n");
+  writeConfig(
+    root,
+    JSON.stringify({ dotfilesDir, links: [{ name: "tool", systemPath }] }),
+  );
+
+  for (const command of [
+    "init",
+    "add",
+    "status",
+    "link",
+    "deploy",
+    "pull",
+    "update",
+  ]) {
+    for (const args of [
+      [command, "--help"],
+      [command, "-h"],
+      ["help", command],
+    ]) {
+      const result = runCli(args, env);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, new RegExp(`dot ${command}`));
+      assert.equal(result.stderr, "");
+      assert.equal(existsSync(dotfilesDir), false);
+      assert.equal(lstatSync(systemPath).isSymbolicLink(), false);
+      assert.equal(
+        readFileSync(join(systemPath, "settings.json"), "utf-8"),
+        "preserved\n",
+      );
+      assert.equal(
+        existsSync(join(root, ".config", "dot", ".config-hash")),
+        false,
+      );
+    }
+  }
+
+  writeConfig(root, "{ invalid");
+  const result = runCli(["link", "--help"], env);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, "");
+});
+
+test("CLI rejects unexpected arguments before loading configuration", (t) => {
+  const { root, env } = createTempHome(t);
+  writeConfig(root, "{ invalid");
+
+  for (const args of [
+    ["link", "--typo"],
+    ["deploy", "tool"],
+    ["status", "--typo"],
+    ["init", "--yes"],
+    ["version", "extra"],
+  ]) {
+    const result = runCli(args, env);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Unexpected argument/);
+    assert.doesNotMatch(result.stderr, /Failed to parse config/);
+  }
+
+  const result = runCli(["help", "unknown"], env);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unknown command/);
+});
+
+test("CLI reports a missing config with an actionable next step", (t) => {
+  const { root, env } = createTempHome(t);
+
+  for (const command of ["link", "deploy", "status", "update"]) {
+    const result = runCli([command], env);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /No configuration file found/);
+    assert.match(result.stderr, /dot init/);
+    assert.equal(existsSync(join(root, ".config")), false);
+  }
+});
+
+test("CLI init guides first use and empty link commands explain the next step", (t) => {
+  const { root, env } = createTempHome(t);
+  const configPath = join(root, ".config", "dot", "config.jsonc");
+  const init = runCli(["init"], env);
+  assert.equal(init.status, 0, init.stderr);
+  assert.match(init.stdout, /dot add <path>/);
+  const content = readFileSync(configPath, "utf-8");
+
+  const repeatedInit = runCli(["init"], env);
+  assert.equal(repeatedInit.status, 0, repeatedInit.stderr);
+  assert.equal(readFileSync(configPath, "utf-8"), content);
+
+  for (const command of ["link", "deploy"]) {
+    const result = runCli([command], env);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /No links configured for this platform/);
+  }
+
+  const customConfig = join(root, "custom.jsonc");
+  const custom = runCli(["init", "-c", customConfig], env);
+  assert.equal(custom.status, 0, custom.stderr);
+  assert.equal(existsSync(customConfig), true);
+});
+
+test("CLI output uses plain text when redirected or NO_COLOR is set", (t) => {
+  const { env } = createTempHome(t);
+  delete env.FORCE_COLOR;
+
+  for (const colorEnv of [env, { ...env, NO_COLOR: "1" }]) {
+    const help = runCli(["help"], colorEnv);
+    assert.equal(help.status, 0);
+    assert.doesNotMatch(help.stdout, /\x1b\[/);
+    const unknown = runCli(["unknown"], colorEnv);
+    assert.equal(unknown.status, 1);
+    assert.doesNotMatch(unknown.stderr, /\x1b\[/);
+  }
+});
+
 test("CLI status succeeds when configured link points to the repository path", (t) => {
   if (skipWhenGitUnavailable(t)) {
     return;
@@ -166,7 +286,10 @@ test("CLI link migrates a local file and replaces it with a file link", (t) => {
     /EPERM|EACCES|privilege|permission/i.test(result.stderr)
   ) {
     assert.equal(existsSync(systemPath), true);
-    assert.equal(readFileSync(systemPath, "utf-8"), "[user]\n  name = Developer\n");
+    assert.equal(
+      readFileSync(systemPath, "utf-8"),
+      "[user]\n  name = Developer\n",
+    );
     assert.equal(existsSync(repoPath), false);
     t.skip(`file symlink creation is unavailable: ${result.stderr}`);
     return;
@@ -174,10 +297,7 @@ test("CLI link migrates a local file and replaces it with a file link", (t) => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(lstatSync(systemPath).isSymbolicLink(), true);
-  assert.equal(
-    readFileSync(repoPath, "utf-8"),
-    "[user]\n  name = Developer\n",
-  );
+  assert.equal(readFileSync(repoPath, "utf-8"), "[user]\n  name = Developer\n");
   assert.match(result.stdout, /Successfully moved files/);
   assert.match(result.stdout, /Successfully linked gitconfig/);
 });
@@ -413,18 +533,19 @@ test("CLI link accepts JSONC comments and does not print restore header for empt
   assert.doesNotMatch(result.stdout, /Restoring Dotfiles Links/);
 });
 
-test("CLI does not rewrite the config hash cache when configuration is unchanged", (t) => {
+test("CLI leaves an existing legacy config hash cache untouched", (t) => {
   const { root, env } = createTempHome(t);
   const dotfilesDir = join(root, "dotfiles");
   mkdirSync(dotfilesDir, { recursive: true });
   writeConfig(root, JSON.stringify({ dotfilesDir, links: [] }));
 
-  const firstRun = runCli(["link"], env);
-  assert.equal(firstRun.status, 0, firstRun.stderr);
-
   const hashPath = join(root, ".config", "dot", ".config-hash");
+  writeFileSync(hashPath, "legacy-cache");
   const firstStat = lstatSync(hashPath);
   const firstHash = readFileSync(hashPath, "utf-8");
+
+  const firstRun = runCli(["link"], env);
+  assert.equal(firstRun.status, 0, firstRun.stderr);
 
   const secondRun = runCli(["link"], env);
   assert.equal(secondRun.status, 0, secondRun.stderr);
@@ -546,15 +667,26 @@ test("CLI update fails clearly before commit when git identity is missing", (t) 
 
 test("CLI update rejects unknown options and supports literal message flags after --", (t) => {
   const { root, env } = createTempHome(t);
-  writeConfig(root, JSON.stringify({ dotfilesDir: join(root, "missing"), links: [] }));
+  writeConfig(
+    root,
+    JSON.stringify({ dotfilesDir: join(root, "missing"), links: [] }),
+  );
 
   const unknownOption = runCli(["update", "--typo"], env);
   assert.equal(unknownOption.status, 1);
   assert.match(unknownOption.stderr, /Unknown update option: "--typo"/);
-  assert.doesNotMatch(unknownOption.stderr, /repository directory does not exist/);
+  assert.doesNotMatch(
+    unknownOption.stderr,
+    /repository directory does not exist/,
+  );
 
   const literalFlag = runCli(["update", "--", "--yes"], env);
   assert.equal(literalFlag.status, 1);
   assert.match(literalFlag.stderr, /repository directory does not exist/);
   assert.doesNotMatch(literalFlag.stderr, /Unknown update option/);
+
+  const literalHelp = runCli(["update", "--", "--help"], env);
+  assert.equal(literalHelp.status, 1);
+  assert.match(literalHelp.stderr, /repository directory does not exist/);
+  assert.doesNotMatch(literalHelp.stdout, /dot update \[message\]/);
 });

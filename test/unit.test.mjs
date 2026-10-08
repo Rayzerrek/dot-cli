@@ -1,14 +1,26 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import test from "node:test";
 
 import { buildInitialConfigContent } from "../dist/config.js";
+import { compareDotfileCopies } from "../dist/copy-status.js";
 import { buildCommitMessage } from "../dist/git.js";
 import { checkJunction } from "../dist/links.js";
 import { normalizePath } from "../dist/paths.js";
-import { preparePathForReplacement, runCmd } from "../dist/system.js";
+import {
+  preparePathForReplacement,
+  restorePreparedPath,
+  runCmd,
+} from "../dist/system.js";
 import {
   createDirectorySymlinkOrSkip,
   createTempDir,
@@ -19,7 +31,7 @@ test("buildInitialConfigContent writes documented JSONC starter config", () => {
 
   assert.match(content, /Created by dot init/);
   assert.match(content, /"dotfilesDir": "~\/dotfiles"/);
-  assert.match(content, /"links": \[\]/);
+  assert.match(content, /"links": \{\}/);
   assert.equal(content.endsWith("\n"), true);
 });
 
@@ -91,9 +103,78 @@ test("preparePathForReplacement removes link entries without touching targets", 
 
   const result = preparePathForReplacement(systemPath);
 
-  assert.deepEqual(result, { ok: true, action: "removed-link" });
+  assert.equal(result.ok, true);
+  assert.equal(result.action, "removed-link");
   assert.equal(existsSync(systemPath), false);
   assert.equal(existsSync(target), true);
+
+  assert.deepEqual(restorePreparedPath(systemPath, result), { ok: true });
+  assert.equal(existsSync(systemPath), true);
+});
+
+test("restorePreparedPath restores a physical backup after a failed replacement", (t) => {
+  const root = createTempDir(t, "dot-cli-recovery-");
+  const systemPath = join(root, "settings");
+  writeFileSync(systemPath, "preserved\n");
+  const prepared = preparePathForReplacement(systemPath);
+  assert.equal(prepared.ok, true);
+  writeFileSync(systemPath, "new destination\n");
+  assert.equal(restorePreparedPath(systemPath, prepared).ok, false);
+  assert.equal(readFileSync(systemPath, "utf8"), "new destination\n");
+  unlinkSync(systemPath);
+  assert.deepEqual(restorePreparedPath(systemPath, prepared), { ok: true });
+  assert.equal(readFileSync(systemPath, "utf8"), "preserved\n");
+});
+
+test("copy comparison detects content changes beyond the first buffer", (t) => {
+  const root = createTempDir(t, "dot-cli-copy-");
+  const source = join(root, "source");
+  const destination = join(root, "destination");
+  const data = Buffer.alloc(150_000, 42);
+  writeFileSync(source, data);
+  writeFileSync(destination, data);
+  assert.deepEqual(compareDotfileCopies(source, destination), {
+    ok: true,
+    matches: true,
+  });
+  data[140_000] = 43;
+  writeFileSync(destination, data);
+  assert.deepEqual(compareDotfileCopies(source, destination), {
+    ok: true,
+    matches: false,
+  });
+  writeFileSync(source, data);
+  writeFileSync(destination, Buffer.concat([data, Buffer.from("extra")]));
+  assert.deepEqual(compareDotfileCopies(source, destination), {
+    ok: true,
+    matches: false,
+  });
+  writeFileSync(source, "");
+  writeFileSync(destination, "");
+  assert.deepEqual(compareDotfileCopies(source, destination), {
+    ok: true,
+    matches: true,
+  });
+});
+
+test("copy comparison checks directory entries without following symlink cycles", (t) => {
+  const root = createTempDir(t, "dot-cli-copy-links-");
+  const source = join(root, "source");
+  const destination = join(root, "destination");
+  mkdirSync(source);
+  mkdirSync(destination);
+  if (!createDirectorySymlinkOrSkip(t, source, join(source, "loop"))) return;
+  if (!createDirectorySymlinkOrSkip(t, source, join(destination, "loop")))
+    return;
+  assert.deepEqual(compareDotfileCopies(source, destination), {
+    ok: true,
+    matches: true,
+  });
+  writeFileSync(join(destination, "extra"), "extra");
+  assert.deepEqual(compareDotfileCopies(source, destination), {
+    ok: true,
+    matches: false,
+  });
 });
 
 test("runCmd returns raw structured output for successful and failing commands", () => {

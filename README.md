@@ -1,113 +1,76 @@
-# Dotfiles CLI (`dot`)
+# dot — your dotfiles, everywhere
 
 [![npm version](https://img.shields.io/npm/v/@rayzerrek/dot-cli.svg?style=flat-square)](https://www.npmjs.com/package/@rayzerrek/dot-cli)
-[![npm downloads](https://img.shields.io/npm/dm/@rayzerrek/dot-cli.svg?style=flat-square)](https://www.npmjs.com/package/@rayzerrek/dot-cli)
 
-A lightweight, high-performance, cross-platform CLI manager to keep system configurations (`dotfiles`) in sync across Windows, macOS, and Linux.
+Keep your config files in one Git repository. Link them to your apps, copy them to a new machine, and commit changes with one command. Windows, macOS, and Linux. One runtime dependency.
 
-## Installation
+## Quick start
 
-### Via npm (Recommended)
+Requires Node.js. Pick an existing config file or directory; this example uses your Git config.
 
-Install the CLI globally on your system:
-
-```bash
+```sh
 npm install -g @rayzerrek/dot-cli
+dot add ~/.gitconfig
+dot link --dry-run
+dot link
 ```
 
-Or run it instantly without installation using `npx`:
+`add` creates a config if needed and registers the path for your current OS. `link` moves your existing file into `~/dotfiles/.gitconfig` when the repository copy is missing, then links it back. Existing destination files and directories are backed up before replacement.
 
-```bash
-npx @rayzerrek/dot-cli status
+Use a Git repository at `~/dotfiles` for `status` and `update`: clone yours there, or run `git init ~/dotfiles`. Then:
+
+```sh
+dot status
+dot update "Configure Git"
 ```
 
-### From Source
+Set an `origin` remote before `update` (`git -C ~/dotfiles remote add origin <url>`). It shows all changes and the commit message before asking for confirmation.
 
-If you prefer to clone the repository and run or link it locally:
+On Windows, [file symlinks](https://blogs.windows.com/windowsdeveloper/2016/12/02/symlinks-windows-10/) need Developer Mode or an elevated terminal. Directory links use junctions. Use `dot deploy` for independent copies; later edits are not synced back.
 
-```bash
-# Clone the repository and install dependencies
-git clone https://github.com/Rayzerrek/dot-cli.git
-cd dot-cli
-npm install
+## Commands
 
-# Compile TypeScript to JavaScript
-npm run build
+| Command | What it does |
+| --- | --- |
+| `dot init [repository]` | Create a starter config without replacing an existing one |
+| `dot add <path> [--name <name>]` | Register an existing file or directory; preserve config comments |
+| `dot link` | Create or repair links; migrate local configs when needed |
+| `dot deploy` | Copy configs; skip matching copies and back up changed destinations |
+| `dot status` | Check links, compare copies, and show Git changes and branch status |
+| `dot pull` | Download updates from `origin`; fast-forward only, with a clean working tree |
+| `dot update [message]` | Stage all repository changes, commit, and push to `origin` |
+| `dot help [command]` | Show help; also `dot <command> --help` |
 
-# Link the CLI globally to your system
-npm link
-```
+Use `--dry-run` on `link`, `deploy`, `pull`, or `update` to preview changes without writing files. Use `dot update --yes` for automation, `dot update -- "-message"` for a message starting with a dash, and `dot --version` for the installed version.
+
+On another machine, use `dot pull` to download committed updates. Linked files update immediately; run `dot deploy` to refresh copies or `dot link` for new entries. Local edits and diverged branches require resolution before pulling.
+
+After a failed push, repeat `dot update` with the same config to push the saved commit. `status` exits with code 1 for missing or incorrect paths, changed copies, or a failed Git check. Copy comparison checks contents, additional or missing files, and permissions on Linux/macOS; it does not follow nested symlinks.
 
 ## Configuration
 
-The CLI supports dynamic links and custom repository locations using a `config.jsonc` (JSON with Comments) file.
+JSONC supports comments and trailing commas. Edit manually or let `dot add` maintain it:
 
-1. Create a configuration folder at `~/.config/dot/` (or use `~/.dotrc.jsonc` in your home directory).
-2. Copy `config.example.jsonc` to `~/.config/dot/config.jsonc`:
-   ```bash
-   cp config.example.jsonc ~/.config/dot/config.jsonc
-   ```
-3. Edit `~/.config/dot/config.jsonc` to define your links.
-
-For freshly cloned dotfiles, you can also keep a portable config directly in the dotfiles repository:
-
-```bash
-git clone <your-dotfiles-repo> ~/dotfiles
-dot deploy
-```
-
-When no global config exists, `dot` also looks for `config.jsonc`, `config.json`, `dot.config.jsonc`, or `dot.config.json` inside `~/dotfiles` (or `$DOTFILES_DIR`). If that repository-local config omits `dotfilesDir`, the repository folder is used automatically.
-
-### Configuration Format
-
-```json
+```jsonc
 {
   "dotfilesDir": "~/dotfiles",
-  "links": [
-    {
-      "name": "nvim",
-      "systemPath": {
-        "windows": "~/AppData/Local/nvim",
-        "macos": "~/.config/nvim",
-        "linux": "~/.config/nvim"
-      }
+  "links": {
+    ".gitconfig": "~/.gitconfig",
+    "nvim": {
+      "windows": "~/AppData/Local/nvim",
+      "macos": "~/.config/nvim",
+      "linux": "~/.config/nvim"
     }
-  ]
+  }
 }
 ```
 
-- **`dotfilesDir`**: The absolute path to your central dotfiles repository (defaults to `~/dotfiles` or `DOTFILES_DIR` environment variable).
-- **`links`**: An array of files or directories to link:
-  - **`name`**: The file or directory name in your dotfiles repository and the label shown in the CLI.
-  - **`systemPath`**: The destination path where the link should sit on the system (can be a plain string, or a platform-specific object supporting `windows`, `macos`, and `linux`).
+Each key is a top-level file or directory in your repository. A string applies on every OS; a platform map applies only to its listed platforms. Existing `links: [{ "name": "…", "systemPath": "…" }]` configs are still supported. Relative paths resolve from the config file's directory; `~` expands to your home directory.
 
-## Usage
+Lookup order: explicit `-c` / `--config` → `dot.config.jsonc` or `dot.config.json` in the current directory → `~/.config/dot/config.jsonc`, then `config.json`, then `~/.dotrc.jsonc`, then `.dotrc.json` → `config.jsonc`, `config.json`, `dot.config.jsonc`, or `dot.config.json` in `$DOTFILES_DIR` or `~/dotfiles`.
 
-```bash
-# Check the state of system links and the git repository
-dot status
+Repository location: `dotfilesDir` in config → `DOTFILES_DIR` environment variable → config's directory for repository-local or explicit configs → `~/dotfiles`.
 
-# Create the default configuration file
-dot init
+For a portable setup, keep `dot.config.jsonc` in your dotfiles repository and omit `dotfilesDir`. Create one with `dot init -c ~/my-dotfiles/dot.config.jsonc`. After cloning, run `dot link` from that directory, or `dot link -c ~/my-dotfiles/dot.config.jsonc` from anywhere. The `-c` option works with every config command, including `init`, `add`, and `pull`.
 
-# Restore or recreate missing system links
-dot link
-
-# Copy dotfiles into their configured system locations instead of linking
-dot deploy
-
-# Use a config from a non-default cloned dotfiles directory
-dot link --config ~/my-dotfiles/config.jsonc
-
-# Stage, commit, and push changes to your dotfiles repository
-dot update [optional_message]
-
-# Skip the confirmation prompt in CI and other non-interactive environments
-dot update --yes [optional_message]
-
-# Display installed version
-dot --version
-
-# Display help
-dot help
-```
+[Example config](./config.example.jsonc) · [Contributing](https://github.com/Rayzerrek/dot-cli/blob/master/CONTRIBUTING.md) · [Changelog](https://github.com/Rayzerrek/dot-cli/blob/master/CHANGELOG.md) · [Issues](https://github.com/Rayzerrek/dot-cli/issues) · [MIT license](./LICENSE)

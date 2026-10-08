@@ -4,7 +4,40 @@ All notable changes to this project will be documented in this file.
 
 This project follows npm package versions published for `@rayzerrek/dot-cli`.
 
-## [Unreleased]
+## [1.1.0] - 2026-10-08
+
+### Added
+
+- `dot add <path> [--name <name>]` registers configs for the current platform while preserving JSONC comments and existing platform mappings.
+- Compact config syntax: `"links": { "nvim": "~/.config/nvim" }`. Existing array configs remain supported.
+- `--dry-run` previews link, deploy, pull, and update operations without writing files.
+- `dot pull` downloads fast-forward updates from origin and refuses local changes.
+- `dot init [repository] -c <path>` creates portable configs; project `dot.config.jsonc` / `dot.config.json` files are discovered from the current directory.
+- Status recognizes matching deployed copies and detects changed, missing, or additional content.
+
+### Changed
+
+- Shortened the README, contribution guide, and example config around first use.
+- Added npm search keywords and included the example config in the published package.
+- Simplified terminal help and headings; redirected output and `NO_COLOR` omit ANSI colors.
+- Relative config paths resolve from the config file directory; project config takes precedence over global config.
+- Removed the config hash cache so loading config is read-only.
+- Deploy skips matching copies and prepares complete copies before replacing destinations.
+- Copy comparison reuses directory metadata and fixed-size buffers to reduce filesystem calls and memory allocation.
+- Git status shows branch information and safely handles names containing spaces or Unicode.
+- CI covers Node.js 22 and 24 on Windows, macOS, and Linux; publishing runs tests first.
+
+### Fixed
+
+- Command-level `--help`, `-h`, and `dot help <command>` show help without running commands.
+- Unexpected arguments are rejected before commands can change files.
+- Commands that need configuration fail with a `dot init` hint when none is found.
+- Empty link and deploy configurations explain how to add links instead of exiting silently.
+- Update retries existing unpushed commits after a failed push, and checks branch, identity, repository root, remote, and merge conflicts before staging changes.
+- Failed replacements restore previous destinations; backup names do not overwrite existing backups.
+- Deploy refreshes Linux/macOS file and directory permissions even when contents match, including executable scripts.
+- Config validation reports syntax error line and column, rejects blank paths and overlapping destinations, accepts symlinked config files, and prevents circular paths through symlink aliases.
+- Windows link checks accept differences in path casing; subprocesses avoid opening extra console windows.
 
 ## [1.0.26] - 2026-07-11
 

@@ -1,9 +1,11 @@
-import { cpSync, mkdirSync } from "fs";
-import { dirname } from "path";
+import { cpSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "fs";
+import { basename, dirname, join } from "path";
 
+import { compareDotfileCopies } from "./copy-status.js";
 import {
   errorMessage,
   preparePathForReplacement,
+  restorePreparedPath,
   safeLstat,
 } from "./system.js";
 import {
@@ -24,8 +26,14 @@ import type { AppConfig } from "./types.js";
  * destination. Existing physical destinations are moved to timestamped backups;
  * existing symlink entries are removed without deleting their targets.
  */
-export function handleDeploy({ links }: AppConfig): boolean {
-  if (links.length === 0) return true;
+export function handleDeploy({ links }: AppConfig, dryRun = false): boolean {
+  if (dryRun) logInfo("Dry run: no files will be changed.");
+  if (links.length === 0) {
+    logInfo(
+      "No links configured for this platform. Add entries to links in your config.",
+    );
+    return true;
+  }
 
   console.log(header("Deploying Dotfiles"));
 
@@ -41,38 +49,95 @@ export function handleDeploy({ links }: AppConfig): boolean {
       ok = false;
       continue;
     }
-
-    const preparedDestination = preparePathForReplacement(link.systemPath);
-    if (!preparedDestination.ok) {
-      const message =
-        preparedDestination.action === "remove-link"
-          ? "Failed to remove existing link"
-          : "Failed to create backup";
-      logError(`${message}: ${preparedDestination.error}`);
+    if (!sourceStat.isDirectory() && !sourceStat.isFile()) {
+      logError(
+        `Repository source is not a regular file or directory: ${link.repoPath}. Skipping.`,
+      );
       ok = false;
       continue;
     }
-    if (preparedDestination.action === "removed-link") {
-      logInfo(`Removed existing link at ${link.systemPath} before copying.`);
+    const destinationStat = safeLstat(link.systemPath);
+    if (destinationStat && !destinationStat.isSymbolicLink()) {
+      const copy = compareDotfileCopies(link.repoPath, link.systemPath);
+      if (!copy.ok) {
+        logError(`Could not compare ${link.name}: ${copy.error}`);
+        ok = false;
+        continue;
+      }
+      if (copy.matches) {
+        logSuccess(`Copy for ${link.name} is already current. Skipping.`);
+        continue;
+      }
     }
-    if (preparedDestination.action === "created-backup") {
-      logWarning(
-        `Existing config detected at ${link.systemPath}. Created backup at: ${preparedDestination.backupPath}.`,
-      );
-      logSuccess("Backup created successfully!");
+    if (dryRun) {
+      const destination = safeLstat(link.systemPath);
+      if (destination)
+        logInfo(
+          `Would ${destination.isSymbolicLink() ? "replace link" : "back up"}: ${link.systemPath}`,
+        );
+      logInfo(`Would copy ${link.repoPath} to ${link.systemPath}`);
+      continue;
     }
 
     logInfo(`Copying '${link.repoPath}' to '${link.systemPath}'...`);
+    let stagingDirectory: string | undefined;
     try {
       mkdirSync(dirname(link.systemPath), { recursive: true });
-      cpSync(link.repoPath, link.systemPath, {
+      stagingDirectory = mkdtempSync(
+        join(dirname(link.systemPath), ".dot-deploy-"),
+      );
+      const stagedPath = join(stagingDirectory, "config");
+      cpSync(link.repoPath, stagedPath, {
         recursive: true,
         preserveTimestamps: true,
       });
+      const preparedDestination = preparePathForReplacement(link.systemPath);
+      if (!preparedDestination.ok) {
+        logError(`Failed to prepare destination: ${preparedDestination.error}`);
+        ok = false;
+        continue;
+      }
+      if (preparedDestination.action === "created-backup") {
+        logSuccess(
+          `Backup created successfully: ${preparedDestination.backupPath}`,
+        );
+      }
+      try {
+        renameSync(stagedPath, link.systemPath);
+      } catch (err) {
+        const restored = restorePreparedPath(
+          link.systemPath,
+          preparedDestination,
+        );
+        if (!restored.ok)
+          logError(
+            `Could not restore the previous destination: ${restored.error}`,
+          );
+        throw err;
+      }
       logSuccess(`Successfully deployed ${link.name}!`);
     } catch (err) {
       logError(`Error copying files: ${errorMessage(err)}`);
       ok = false;
+    } finally {
+      if (stagingDirectory) {
+        try {
+          if (
+            dirname(stagingDirectory) !== dirname(link.systemPath) ||
+            !basename(stagingDirectory).startsWith(".dot-deploy-")
+          ) {
+            throw new Error(
+              `Unexpected temporary copy path: ${stagingDirectory}`,
+            );
+          }
+          rmSync(stagingDirectory, { recursive: true, force: true });
+        } catch (err) {
+          logWarning(
+            `Could not remove temporary copy at ${stagingDirectory}: ${errorMessage(err)}`,
+          );
+          ok = false;
+        }
+      }
     }
   }
 

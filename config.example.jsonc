@@ -1,36 +1,13 @@
 {
-  // Example configuration showcasing different link configuration formats.
-  // Optional for repository-local configs; defaults to this config's directory there.
+  // Omit dotfilesDir when keeping this config in your dotfiles repository.
   "dotfilesDir": "~/dotfiles",
-  "links": [
-    {
-      "name": ".agents",
-      // Format A: Mapping for all platforms. This folder will be linked on Windows, macOS, and Linux.
-      "systemPath": {
-        "windows": "~/.agents",
-        "macos": "~/.agents",
-        "linux": "~/.agents",
-      },
-    },
-    {
-      "name": "nvim",
-      // Format B: Omit platforms. This link is only configured for Windows and Linux. It will be silently skipped on macOS.
-      "systemPath": {
-        "windows": "~/AppData/Local/nvim",
-        "linux": "~/.config/nvim",
-      },
-    },
-    {
-      "name": "hammerspoon",
-      // Format C: Platform-specific tool. This link is only configured for macOS and will be skipped on Windows and Linux.
-      "systemPath": {
-        "macos": "~/.hammerspoon",
-      },
-    },
-    {
-      "name": "generic-tool",
-      // Format D: Universal string path. If the path is identical across all systems, you can specify it directly as a string.
-      "systemPath": "~/.generic-tool-config",
-    },
-  ],
+  "links": {
+    ".gitconfig": "~/.gitconfig",
+    "nvim": {
+      // Omit a platform to skip this entry there.
+      "windows": "~/AppData/Local/nvim",
+      "macos": "~/.config/nvim",
+      "linux": "~/.config/nvim"
+    }
+  }
 }

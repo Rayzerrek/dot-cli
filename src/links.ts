@@ -9,10 +9,11 @@ import {
 import { homedir } from "os";
 import { dirname, isAbsolute, join, resolve } from "path";
 
-import { normalizePath } from "./paths.js";
+import { normalizePath, sameFilesystemPath } from "./paths.js";
 import {
   errorMessage,
   preparePathForReplacement,
+  restorePreparedPath,
   safeLstat,
 } from "./system.js";
 import {
@@ -66,8 +67,10 @@ export function checkJunction(config: ResolvedLink): LinkCheckResult {
   try {
     const target = readlinkSync(config.systemPath);
     if (
-      normalizePath(resolveLinkTarget(config.systemPath, target)) ===
-      normalizePath(config.repoPath)
+      sameFilesystemPath(
+        resolveLinkTarget(config.systemPath, target),
+        config.repoPath,
+      )
     ) {
       return { linked: true, message: "Correct" };
     }
@@ -107,7 +110,10 @@ function staleLinkCandidates(name: string): string[] {
  * Only symbolic links/junctions that still point into the dotfiles repository
  * are removed. Physical directories are never deleted here.
  */
-function cleanStaleLinks({ dotfilesDir, links }: AppConfig): boolean {
+function cleanStaleLinks(
+  { dotfilesDir, links }: AppConfig,
+  dryRun: boolean,
+): boolean {
   if (!safeLstat(dotfilesDir)) return true;
 
   let dotfileNames: string[];
@@ -160,13 +166,20 @@ function cleanStaleLinks({ dotfilesDir, links }: AppConfig): boolean {
       }
 
       if (
-        normalizePath(resolveLinkTarget(candidate, target)) !==
-        normalizedRepoPath
+        !sameFilesystemPath(
+          resolveLinkTarget(candidate, target),
+          normalizedRepoPath,
+        )
       ) {
         continue;
       }
 
       try {
+        if (dryRun) {
+          ensureHeader();
+          logInfo(`Would remove stale link: ${candidate} → ${repoPath}`);
+          continue;
+        }
         // unlinkSync safely removes the link entry without risk of deleting target files.
         // On Windows, Bun's rmSync fails with EFAULT on junctions, so unlinkSync is required.
         unlinkSync(candidate);
@@ -193,11 +206,17 @@ function cleanStaleLinks({ dotfilesDir, links }: AppConfig): boolean {
  * backups before link creation. Existing incorrect symlinks/junctions are
  * removed. Target contents are never recursively deleted.
  */
-export function handleLink(config: AppConfig): boolean {
-  let ok = cleanStaleLinks(config);
+export function handleLink(config: AppConfig, dryRun = false): boolean {
+  if (dryRun) logInfo("Dry run: no files will be changed.");
+  let ok = cleanStaleLinks(config, dryRun);
 
   const { links } = config;
-  if (links.length === 0) return ok;
+  if (links.length === 0) {
+    logInfo(
+      "No links configured for this platform. Add entries to links in your config.",
+    );
+    return ok;
+  }
 
   console.log(header("Restoring Dotfiles Links"));
 
@@ -221,6 +240,11 @@ export function handleLink(config: AppConfig): boolean {
           `Local configuration path is not a file or directory: ${link.systemPath}. Skipping.`,
         );
         ok = false;
+        continue;
+      }
+      if (dryRun) {
+        logInfo(`Would move ${link.systemPath} to ${link.repoPath}`);
+        logInfo(`Would create link: ${link.systemPath} → ${link.repoPath}`);
         continue;
       }
       logInfo(
@@ -249,6 +273,16 @@ export function handleLink(config: AppConfig): boolean {
 
     if (checkJunction(link).linked) {
       logSuccess(`Link for ${link.name} is already correct. Skipping.`);
+      continue;
+    }
+
+    if (dryRun) {
+      const destination = safeLstat(link.systemPath);
+      if (destination)
+        logInfo(
+          `Would ${destination.isSymbolicLink() ? "replace link" : "back up"}: ${link.systemPath}`,
+        );
+      logInfo(`Would create link: ${link.systemPath} → ${link.repoPath}`);
       continue;
     }
 
@@ -284,6 +318,18 @@ export function handleLink(config: AppConfig): boolean {
       logSuccess(`Successfully linked ${link.name}!`);
     } catch (err) {
       logError(`Error creating link: ${errorMessage(err)}`);
+      if (process.platform === "win32" && repoStat.isFile()) {
+        logInfo(
+          "File links on Windows require Developer Mode or an elevated terminal. To use copies, run: dot deploy",
+        );
+      }
+      const restored = restorePreparedPath(link.systemPath, preparedSystemPath);
+      if (!restored.ok)
+        logError(
+          `Could not restore the previous destination: ${restored.error}`,
+        );
+      else if (preparedSystemPath.action !== "none")
+        logWarning(`Restored the previous destination at ${link.systemPath}.`);
       if (migratedFromSystem) {
         if (safeLstat(link.systemPath)) {
           logWarning(

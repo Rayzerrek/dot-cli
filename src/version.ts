@@ -1,2 +1,2 @@
 /** dot-cli package version generated from package.json at build time. */
-export const VERSION = "1.0.26";
+export const VERSION = "1.1.0";

@@ -1,5 +1,13 @@
 import { spawnSync } from "child_process";
-import { type Stats, lstatSync, renameSync, unlinkSync } from "fs";
+import {
+  type Stats,
+  lstatSync,
+  readlinkSync,
+  renameSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
+} from "fs";
 
 export interface CommandResult {
   success: boolean;
@@ -9,7 +17,12 @@ export interface CommandResult {
 
 type PreparedPathResult =
   | { ok: true; action: "none" }
-  | { ok: true; action: "removed-link" }
+  | {
+      ok: true;
+      action: "removed-link";
+      target: string;
+      linkType: "file" | "dir" | "junction";
+    }
   | { ok: true; action: "created-backup"; backupPath: string }
   | { ok: false; action: "remove-link" | "create-backup"; error: string };
 
@@ -45,10 +58,18 @@ export function preparePathForReplacement(path: string): PreparedPathResult {
 
   if (stat.isSymbolicLink()) {
     try {
+      const target = readlinkSync(path);
+      let linkType: "file" | "dir" | "junction" = "file";
+      try {
+        if (statSync(path).isDirectory())
+          linkType = process.platform === "win32" ? "junction" : "dir";
+      } catch {
+        // A dangling link can still be replaced and its target retained for recovery.
+      }
       // unlinkSync removes the link entry itself. On Windows, this is required
       // for junctions where recursive removal can fail or target real files.
       unlinkSync(path);
-      return { ok: true, action: "removed-link" };
+      return { ok: true, action: "removed-link", target, linkType };
     } catch (err) {
       return {
         ok: false,
@@ -58,7 +79,10 @@ export function preparePathForReplacement(path: string): PreparedPathResult {
     }
   }
 
-  const backupPath = `${path}_backup_${Date.now()}`;
+  const backupBase = `${path}_backup_${Date.now()}`;
+  let backupPath = backupBase;
+  let suffix = 0;
+  while (safeLstat(backupPath)) backupPath = `${backupBase}_${++suffix}`;
   try {
     renameSync(path, backupPath);
     return { ok: true, action: "created-backup", backupPath };
@@ -68,6 +92,24 @@ export function preparePathForReplacement(path: string): PreparedPathResult {
       action: "create-backup",
       error: errorMessage(err),
     };
+  }
+}
+
+/** Restores a replaced file, directory or link after failure, without overwriting a new destination. */
+export function restorePreparedPath(
+  path: string,
+  prepared: Extract<PreparedPathResult, { ok: true }>,
+): { ok: true } | { ok: false; error: string } {
+  if (prepared.action === "none") return { ok: true };
+  if (safeLstat(path))
+    return { ok: false, error: `Recovery path already exists: ${path}` };
+  try {
+    if (prepared.action === "created-backup")
+      renameSync(prepared.backupPath, path);
+    else symlinkSync(prepared.target, path, prepared.linkType);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
   }
 }
 
@@ -87,6 +129,7 @@ export function runCmd(
     cwd,
     env: process.env,
     encoding: "utf-8",
+    windowsHide: true,
   });
   const stdout = typeof proc.stdout === "string" ? proc.stdout : "";
   const stderr = typeof proc.stderr === "string" ? proc.stderr : "";
